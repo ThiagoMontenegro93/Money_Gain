@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.expo/
+web-build/
+*.log
+.env
+storage/
+backups/
+coverage/
