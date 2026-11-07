@@ -43,6 +43,21 @@ function messageFrom(body: unknown, status: number): { message: string; code?: s
   return { message: `Erro ${status} ao comunicar com o servidor.` };
 }
 
+/**
+ * Um 401 de regra de negócio (ex.: "Senha incorreta" na reconfirmação, "não pode desativar a si mesmo")
+ * não deve derrubar a sessão: só desloga se o próprio token for recusado em /auth/me.
+ */
+async function confirmSessionLost(path: string) {
+  const token = authToken;
+  if (path === '/auth/me') return onUnauthorized?.();
+  try {
+    const r = await fetch(`${API_URL}/auth/me`, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } });
+    if (r.status === 401 && token === authToken) onUnauthorized?.();
+  } catch {
+    /* sem rede: mantém a sessão */
+  }
+}
+
 export async function request<T>(method: string, path: string, opts: { body?: unknown; query?: Query; form?: FormData } = {}): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
@@ -69,7 +84,7 @@ export async function request<T>(method: string, path: string, opts: { body?: un
   }
   if (!res.ok) {
     const { message, code } = messageFrom(data, res.status);
-    if (res.status === 401 && authToken && onUnauthorized) onUnauthorized();
+    if (res.status === 401 && authToken && onUnauthorized) void confirmSessionLost(path);
     throw new ApiError(res.status, message, code);
   }
   return data as T;
@@ -79,8 +94,35 @@ export const http = {
   get: <T>(path: string, query?: Query) => request<T>('GET', path, { query }),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, { body: body ?? {} }),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, { body }),
+  patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, { body: body ?? {} }),
+  del: <T>(path: string) => request<T>('DELETE', path),
   upload: <T>(path: string, form: FormData) => request<T>('POST', path, { form }),
 };
+
+/** Baixa um arquivo autenticado (ex.: PDF) como Blob. */
+export async function fetchBlob(path: string, init: { method?: string; body?: unknown } = {}): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+  if (init.body !== undefined) headers['Content-Type'] = 'application/json';
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { headers, method: init.method ?? 'GET', body: init.body === undefined ? undefined : JSON.stringify(init.body) });
+  } catch {
+    throw new ApiError(0, `Não foi possível conectar à API (${API_URL}). Verifique se o servidor está no ar.`);
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    let data: unknown = text;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      /* texto puro */
+    }
+    const { message, code } = messageFrom(data, res.status);
+    throw new ApiError(res.status, message, code);
+  }
+  return res.blob();
+}
 
 export function errorMessage(e: unknown): string {
   if (e instanceof ApiError) return e.message;

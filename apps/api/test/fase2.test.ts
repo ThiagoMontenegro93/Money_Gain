@@ -263,6 +263,6 @@ describe('Usuários: chave PIX e edição', () => {
     expect((await call(tok, 'GET', '/auth/me')).status).toBe(200);
     await ok(owner, 'PUT', `/users/${temp.id}`, { isActive: false });
     expect((await call(tok, 'GET', '/auth/me')).status).toBe(401);
-    expect((await call(owner, 'PUT', `/users/${(await ok(owner, 'GET', '/auth/me')).id}`, { isActive: false })).status).toBe(401);
+    expect((await call(owner, 'PUT', `/users/${(await ok(owner, 'GET', '/auth/me')).id}`, { isActive: false })).status).toBe(403);
   });
 });

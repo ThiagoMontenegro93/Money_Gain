@@ -18,7 +18,7 @@ export interface PickedFile {
   previewUri?: string;
 }
 
-function pickWeb(accept: string): Promise<PickedFile | null> {
+export function pickWeb(accept: string): Promise<PickedFile | null> {
   return new Promise((resolve) => {
     const doc = (globalThis as any).document;
     if (!doc) return resolve(null);
@@ -80,4 +80,36 @@ export async function openFile(id: string): Promise<void> {
   const full = absoluteUrl(url);
   if (Platform.OS === 'web') (globalThis as any).open?.(full, '_blank', 'noopener');
   else await Linking.openURL(full);
+}
+
+/** Abre (ou baixa) um Blob autenticado, ex.: PDF gerado pela API. */
+export function openBlob(blob: Blob, filename: string): void {
+  if (Platform.OS !== 'web') throw new Error('Geração de PDF disponível na versão web/desktop');
+  const g = globalThis as any;
+  const url: string = g.URL.createObjectURL(blob);
+  const w = g.open?.(url, '_blank');
+  if (!w) {
+    const a = g.document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    g.document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+  setTimeout(() => g.URL.revokeObjectURL(url), 120_000);
+}
+
+
+/** Força o download de um Blob com o nome informado (web). */
+export function downloadBlob(blob: Blob, filename: string): void {
+  if (Platform.OS !== 'web') throw new Error('Download disponível na versão web/desktop');
+  const g = globalThis as any;
+  const url: string = g.URL.createObjectURL(blob);
+  const a = g.document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  g.document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => g.URL.revokeObjectURL(url), 60_000);
 }

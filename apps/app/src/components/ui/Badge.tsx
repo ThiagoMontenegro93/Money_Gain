@@ -3,11 +3,11 @@ import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-n
 import type { ClientScoreClass } from '@lendcontrol/core';
 import { classColor, classIcon, colors } from '../../theme';
 
-export function Badge({ text, bg = colors.surface2, color = colors.text, size = 'md', style, border }: { text: string; bg?: string; color?: string; size?: 'sm' | 'md' | 'lg'; style?: StyleProp<ViewStyle>; border?: string }) {
+export function Badge({ text, bg = colors.surface2, color = colors.text, size = 'md', style, border, testID }: { text: string; bg?: string; color?: string; size?: 'sm' | 'md' | 'lg'; style?: StyleProp<ViewStyle>; border?: string; testID?: string }) {
   const fs = size === 'sm' ? 11 : size === 'lg' ? 15 : 12;
   const pad = size === 'sm' ? { paddingHorizontal: 6, paddingVertical: 2 } : size === 'lg' ? { paddingHorizontal: 12, paddingVertical: 6 } : { paddingHorizontal: 8, paddingVertical: 3 };
   return (
-    <View style={[styles.badge, pad, { backgroundColor: bg }, border ? { borderWidth: 1, borderColor: border } : null, style]}>
+    <View testID={testID} style={[styles.badge, pad, { backgroundColor: bg }, border ? { borderWidth: 1, borderColor: border } : null, style]}>
       <Text style={{ color, fontSize: fs, fontWeight: '700' }} numberOfLines={1}>
         {text}
       </Text>

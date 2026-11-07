@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Injectable, Param, Post, Put, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Injectable, Param, Post, Put, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Role, User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -128,7 +128,7 @@ export class UsersController {
   @Roles('SUPER_ADMIN')
   @Put('users/:id')
   async update(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(updateUserSchema)) b: z.infer<typeof updateUserSchema>) {
-    if (id === u.id && (b.isActive === false || (b.role && b.role !== 'SUPER_ADMIN'))) throw new UnauthorizedException('Você não pode desativar ou rebaixar a si mesmo');
+    if (id === u.id && (b.isActive === false || (b.role && b.role !== 'SUPER_ADMIN'))) throw new ForbiddenException('Você não pode desativar ou rebaixar a si mesmo');
     const user = await this.prisma.user.update({ where: { id }, data: b });
     await this.audit.log(u.id, 'UPDATE', 'User', id, b);
     return toUserDTO(user);

@@ -1,21 +1,23 @@
 import React, { useState } from 'react';
 import { Linking, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { CLASS_META, GUARANTOR_RELATIONS, isoToBR, RELATIONS, RESIDENCE_TIMES, waLink } from '@lendcontrol/core';
+import { CLASS_META, GUARANTOR_RELATIONS, isoToBR, RELATIONS, RESIDENCE_TIMES } from '@lendcontrol/core';
 import { api } from '@/api';
 import { errorMessage } from '@/api/http';
 import type { ClientDetail } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
+import { ClientDocuments } from '@/components/ClientDocuments';
 import { LoanTable } from '@/components/LoanTable';
+import { MessageLogList } from '@/components/MessageLogList';
 import { PromptModal } from '@/components/PromptModal';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
-import { Badge, Button, Card, Empty, ErrorState, Input, KV, Loading, Modal, MoneyInput, Notice, ProgressBar, ScoreBadge, Select, StatusChip, Stack } from '@/components/ui';
+import { Badge, Button, Card, Checkbox, Empty, ErrorState, Input, KV, Loading, Modal, MoneyInput, Notice, ProgressBar, ScoreBadge, Select, StatusChip, Stack, Tabs } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
 import { useLayout } from '@/hooks/useLayout';
 import { classBand, classColor, colors, scoreColor } from '@/theme';
 import { brl, CLIENT_STATUS_LABEL, dateBR, dateTimeBR, decimalText, parseDecimal, pctText } from '@/utils/format';
-import { openFile } from '@/utils/files';
+import { openBlob, openFile } from '@/utils/files';
 
 const ATTEMPT_TYPES = [
   { value: 'LIGACAO', label: '📞 Ligação' },
@@ -29,19 +31,21 @@ const ATTEMPT_TYPES = [
 ];
 const labelOf = (list: { value: string; label: string }[], v: string | null | undefined) => list.find((x) => x.value === v)?.label ?? v ?? '—';
 
-function firmMessage(c: ClientDetail) {
-  const first = c.fullName.split(' ')[0];
-  return `Olá ${first}. Consta em aberto o valor de ${brl(c.scoreDetail?.openDebtCents || c.emAbertoCents)} referente ao seu empréstimo${c.overdueCount ? `, com ${c.overdueCount} parcela(s) em atraso há ${c.diasSemPagar} dias` : ''}. Solicitamos a regularização HOJE. Caso contrário, o fiador e o contato de emergência serão acionados e serão tomadas as medidas de cobrança cabíveis. Responda esta mensagem para negociar.`;
-}
-function guarantorMessage(c: ClientDetail) {
-  return `Olá ${c.form.guarantorName ?? ''}. Você consta como fiador(a) de ${c.fullName}, que possui ${brl(c.scoreDetail?.openDebtCents || c.emAbertoCents)} em atraso. Precisamos da sua ajuda para regularizar esta dívida o quanto antes. Podemos conversar?`;
-}
+const TABS = [
+  { key: 1, label: 'Resumo', icon: '📊' },
+  { key: 2, label: 'Cobrança', icon: '📣' },
+  { key: 3, label: 'Ficha', icon: '📄' },
+  { key: 4, label: 'Histórico', icon: '🕑' },
+  { key: 5, label: 'Documentos', icon: '📁' },
+] as const;
+type TabKey = 1 | 2 | 3 | 4 | 5;
 
 export default function ClientDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, tab: tabParam } = useLocalSearchParams<{ id: string; tab?: string }>();
   const router = useRouter();
   const toast = useToast();
   const { hasRole } = useAuth();
+  const isAdmin = hasRole('ADMIN', 'SUPER_ADMIN');
   const { isDesktop } = useLayout();
   const { data: c, error, loading, reload, setData } = useAsync(() => api.clients.get(String(id)), [id]);
   const [cpf, setCpf] = useState<{ cpf: string; guarantorCpf: string | null } | null>(null);
@@ -55,6 +59,10 @@ export default function ClientDetailScreen() {
   const [attType, setAttType] = useState<string | null>('LIGACAO');
   const [attResult, setAttResult] = useState('');
   const [attBusy, setAttBusy] = useState(false);
+  const [tab, setTab] = useState<TabKey>(() => { const n = Number(tabParam); return (n >= 1 && n <= 5 ? n : 1) as TabKey; });
+  const [msgBusy, setMsgBusy] = useState<'CLIENTE' | 'FIADOR' | 'CARTA' | 'DOSSIE' | 'OPTOUT' | null>(null);
+  const [negOpen, setNegOpen] = useState(false);
+  const [logKey, setLogKey] = useState(0);
 
   if (loading && !c) return <Loading />;
   if (error && !c) return <ErrorState message={error} onRetry={reload} />;
@@ -99,6 +107,49 @@ export default function ClientDetailScreen() {
     }
   };
 
+  const sendCollection = async (target: 'CLIENTE' | 'FIADOR') => {
+    setMsgBusy(target);
+    try {
+      const r = await api.clients.collectionMessage(c.id, target);
+      setWaOpen({ title: target === 'FIADOR' ? '🤝 Aviso ao fiador' : '💬 Mensagem firme de cobrança', url: r.waLink ?? '', text: r.text });
+      if (r.waLink) void Linking.openURL(r.waLink).catch(() => {});
+      setLogKey((k) => k + 1);
+      void reload();
+    } catch (e) {
+      toast(errorMessage(e), 'error');
+    } finally {
+      setMsgBusy(null);
+    }
+  };
+
+  const downloadPdf = async (kind: 'CARTA' | 'DOSSIE') => {
+    setMsgBusy(kind);
+    try {
+      const blob = kind === 'CARTA' ? await api.clients.letterPdf(c.id) : await api.clients.dossierPdf(c.id);
+      const slug = c.fullName.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-');
+      openBlob(blob, `${kind === 'CARTA' ? 'carta-cobranca' : 'dossie'}-${slug}.pdf`);
+      toast(kind === 'CARTA' ? 'Carta de cobrança gerada (registrada nas tentativas)' : 'Dossiê jurídico gerado');
+      void reload();
+    } catch (e) {
+      toast(errorMessage(e), 'error');
+    } finally {
+      setMsgBusy(null);
+    }
+  };
+
+  const toggleOptOut = async (v: boolean) => {
+    setMsgBusy('OPTOUT');
+    try {
+      const r = await api.clients.optOut(c.id, v);
+      setData({ ...c, whatsappOptOut: r.whatsappOptOut });
+      toast(v ? 'Mensagens automáticas desativadas para este cliente' : 'Mensagens automáticas reativadas');
+    } catch (e) {
+      toast(errorMessage(e), 'error');
+    } finally {
+      setMsgBusy(null);
+    }
+  };
+
   const half = { flex: 1, minWidth: isDesktop ? 0 : undefined };
 
   return (
@@ -111,6 +162,8 @@ export default function ClientDetailScreen() {
           <View style={{ flexDirection: 'row', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
             <StatusChip size="md" status={c.isBlocked ? 'BLOQUEADO' : c.status} label={c.isBlocked ? '🚫 Bloqueado' : CLIENT_STATUS_LABEL[c.status]} />
             {c.responsible ? <Badge text={`Responsável: ${c.responsible.name}`} bg="rgba(0,0,0,0.25)" color="#FFF" /> : null}
+            {c.negativadoEm ? <Badge testID="negativado-badge" text={`⛔ Negativado em ${dateBR(c.negativadoEm)}`} bg="#7F1D1D" color="#FFF" /> : null}
+            {c.whatsappOptOut ? <Badge text="🔕 Sem WhatsApp automático" bg="rgba(0,0,0,0.25)" color="#FFF" /> : null}
             {c.whatsappImportedAt ? <Badge text={`📲 Via WhatsApp - ${dateTimeBR(c.whatsappImportedAt)}`} bg="rgba(0,0,0,0.25)" color="#FFF" /> : null}
             <Badge text={`Ficha ${c.progress.percent}% completa`} bg="rgba(0,0,0,0.25)" color="#FFF" />
           </View>
@@ -131,6 +184,12 @@ export default function ClientDetailScreen() {
         <Notice tone="warning" text={`${c.creditLock.title} - ${c.creditLock.message}`} />
       ) : null}
 
+      <View style={{ marginBottom: 12 }}>
+        <Tabs tabs={TABS.map((t) => ({ ...t }))} active={tab} onChange={(k) => setTab(k as TabKey)} />
+      </View>
+
+      {tab === 1 && (
+      <>
       <Stack row={isDesktop} style={styles.row}>
         {/* Score */}
         <Card title="Score do cliente" style={half}>
@@ -195,19 +254,38 @@ export default function ClientDetailScreen() {
         </View>
       ) : null}
 
+      {/* Empréstimos */}
+      <Card title={`💰 Empréstimos (${c.loans.length})`} style={{ marginBottom: 12, padding: isDesktop ? 0 : 16 }} right={<View style={{ paddingRight: isDesktop ? 16 : 0, paddingTop: isDesktop ? 12 : 0 }}><Button size="sm" title="Novo" icon="➕" disabled={blocked} onPress={() => router.push(`/loans/new?clientId=${c.id}`)} /></View>}>
+        <LoanTable loans={c.loans} showClient={false} emptyText="Cliente ainda não tem empréstimos" />
+      </Card>
+      </>
+      )}
+
+      {tab === 2 && (
+      <>
+      {/* Ações de cobrança */}
+      <Card title="📣 Cobrança" accent={cls === 'PERDA' || cls === 'RUIM' ? colors.danger : colors.orange} style={{ marginBottom: 12 }} testID="collection-card">
+        {c.negativadoEm ? <Notice tone="danger" text={`⛔ Cliente marcado para negativação em ${dateTimeBR(c.negativadoEm)}.`} /> : null}
+        <View style={styles.actionsRow}>
+          <Button testID="wa-firm" title="Mensagem firme (WhatsApp)" icon="💬" variant="success" disabled={!f.whatsapp} loading={msgBusy === 'CLIENTE'} onPress={() => void sendCollection('CLIENTE')} />
+          <Button testID="wa-guarantor" title="Avisar fiador" icon="🤝" variant="warning" disabled={!f.hasGuarantor || !f.guarantorPhone} loading={msgBusy === 'FIADOR'} onPress={() => void sendCollection('FIADOR')} />
+          <Button title="Ligar Emergência" icon="📞" variant="danger" disabled={!f.emergencyPhone1} onPress={() => Linking.openURL(`tel:${(f.emergencyPhone1 ?? '').replace(/\D/g, '')}`)} />
+          <Button testID="letter-pdf" title="Carta de cobrança (PDF)" icon="✉️" variant="secondary" loading={msgBusy === 'CARTA'} onPress={() => void downloadPdf('CARTA')} />
+          {isAdmin ? <Button testID="dossier-pdf" title="Dossiê jurídico (PDF)" icon="⚖️" variant="secondary" loading={msgBusy === 'DOSSIE'} onPress={() => void downloadPdf('DOSSIE')} /> : null}
+          {isAdmin ? <Button testID="negativate-btn" title={c.negativadoEm ? 'Remover negativação' : 'Negativar'} icon="⛔" variant={c.negativadoEm ? 'secondary' : 'danger'} onPress={() => setNegOpen(true)} /> : null}
+        </View>
+        <Checkbox testID="wa-optout" checked={!!c.whatsappOptOut} onChange={(v) => { if (msgBusy !== 'OPTOUT') void toggleOptOut(v); }} label="Não enviar WhatsApp automático para este cliente (lembretes e avisos de atraso)" />
+        <Text style={{ color: colors.textDim, fontSize: 12, fontWeight: '600', marginTop: 4 }}>As mensagens de cobrança usam os templates configurados e ficam registradas no histórico de WhatsApp e nas tentativas de cobrança.</Text>
+      </Card>
+
       {/* Estratégias de cobrança */}
-      {(cls === 'RUIM' || cls === 'PERDA' || c.strategies.length > 0) && c.strategies.length > 0 ? (
+      {c.strategies.length > 0 ? (
         <Card title="🎯 Estratégias de Cobrança" accent={cls === 'PERDA' ? colors.danger : colors.orange} style={{ marginBottom: 12 }} testID="strategies">
           {cls === 'PERDA' ? (
             <View style={styles.perdaBanner}>
               <Text style={styles.perdaText}>💀 PERDA - {brl(c.scoreDetail?.openDebtCents || c.emAbertoCents)} há {c.diasSemPagar} dias - Ações de cobrança intensiva</Text>
             </View>
           ) : null}
-          <View style={styles.actionsRow}>
-            <Button title="Ligar Emergência" icon="📞" variant="danger" disabled={!f.emergencyPhone1} onPress={() => Linking.openURL(`tel:${(f.emergencyPhone1 ?? '').replace(/\D/g, '')}`)} />
-            <Button title="WhatsApp Fiador" icon="🤝" variant="warning" disabled={!f.hasGuarantor || !f.guarantorPhone} onPress={() => f.guarantorPhone && setWaOpen({ title: 'WhatsApp para o fiador', url: waLink(f.guarantorPhone, guarantorMessage(c)), text: guarantorMessage(c) })} />
-            <Button testID="wa-firm" title="Gerar Link wa.me com mensagem firme" icon="💬" variant="success" disabled={!f.whatsapp} onPress={() => f.whatsapp && setWaOpen({ title: 'Mensagem firme de cobrança', url: waLink(f.whatsapp, firmMessage(c)), text: firmMessage(c) })} />
-          </View>
           {c.strategies.map((s, i) => (
             <View key={s.key} style={styles.strategy}>
               <Text style={styles.stratNum}>{i + 1}</Text>
@@ -222,7 +300,6 @@ export default function ClientDetailScreen() {
       ) : null}
 
       {/* Tentativas de cobrança */}
-      {cls !== 'BOM' || c.collectionAttempts.length > 0 ? (
         <Card title="📋 Tentativas de cobrança" style={{ marginBottom: 12 }}>
           <Stack row={isDesktop} style={[styles.row, { alignItems: 'flex-end' }]}>
             <Select label="Tipo" value={attType} onChange={setAttType} options={ATTEMPT_TYPES} style={{ flex: 1 }} />
@@ -240,14 +317,16 @@ export default function ClientDetailScreen() {
             </View>
           ))}
         </Card>
-      ) : null}
 
-      {/* Empréstimos */}
-      <Card title={`💰 Empréstimos (${c.loans.length})`} style={{ marginBottom: 12, padding: isDesktop ? 0 : 16 }} right={<View style={{ paddingRight: isDesktop ? 16 : 0, paddingTop: isDesktop ? 12 : 0 }}><Button size="sm" title="Novo" icon="➕" disabled={blocked} onPress={() => router.push(`/loans/new?clientId=${c.id}`)} /></View>}>
-        <LoanTable loans={c.loans} showClient={false} emptyText="Cliente ainda não tem empréstimos" />
+      {/* Histórico WhatsApp */}
+      <Card title="💬 Histórico de WhatsApp" style={{ marginBottom: 12 }} testID="client-wa-history">
+        <MessageLogList clientId={c.id} showFilters={false} limit={50} reloadKey={logKey} />
       </Card>
+      </>
+      )}
 
       {/* Ficha */}
+      {tab === 3 && (
       <Card
         title="📄 Ficha do cliente"
         style={{ marginBottom: 12 }}
@@ -310,8 +389,10 @@ export default function ClientDetailScreen() {
           {f.hasGuarantor && f.guarantorDocFileId ? <Button size="sm" variant="secondary" title="Ver documento do fiador" onPress={() => openFile(f.guarantorDocFileId!).catch((e) => toast(errorMessage(e), 'error'))} /> : null}
         </View>
       </Card>
+      )}
 
       {/* Histórico */}
+      {tab === 4 && (
       <Card title="🕑 Histórico">
         {c.history.length === 0 ? <Empty text="Sem histórico" icon="🕑" /> : null}
         {c.history.map((h) => (
@@ -324,6 +405,26 @@ export default function ClientDetailScreen() {
           </View>
         ))}
       </Card>
+      )}
+
+      {tab === 5 && <ClientDocuments clientId={c.id} />}
+
+      <PromptModal
+        visible={negOpen}
+        title={c.negativadoEm ? 'Remover negativação' : '⛔ Negativar cliente'}
+        tone={c.negativadoEm ? 'default' : 'danger'}
+        description={c.negativadoEm ? `Remover a marcação de negativação de ${c.fullName}? A ação fica registrada no histórico.` : `Marcar ${c.fullName} para negativação (cadastro de inadimplentes)? A ação fica registrada no histórico e nas tentativas de cobrança.`}
+        confirmLabel={c.negativadoEm ? 'Remover negativação' : 'Negativar'}
+        confirmVariant={c.negativadoEm ? 'primary' : 'danger'}
+        onClose={() => setNegOpen(false)}
+        onConfirm={async () => {
+          const r = await api.clients.negativate(c.id, !c.negativadoEm);
+          setData({ ...c, negativadoEm: r.negativadoEm });
+          setNegOpen(false);
+          toast(r.negativadoEm ? 'Cliente marcado para negativação' : 'Negativação removida');
+          void reload();
+        }}
+      />
 
       <PromptModal
         visible={unblockOpen}
@@ -355,10 +456,10 @@ export default function ClientDetailScreen() {
         <Input label="Nova taxa (%)" mask="decimal" value={newRate} onChangeText={setNewRate} placeholder="8" />
       </Modal>
 
-      <Modal visible={!!waOpen} title={waOpen?.title ?? ''} onClose={() => setWaOpen(null)} width={620}
-        footer={<><Button title="Fechar" variant="secondary" onPress={() => setWaOpen(null)} /><Button title="Abrir no WhatsApp" icon="💬" variant="success" onPress={() => waOpen && Linking.openURL(waOpen.url)} /></>}>
+      <Modal testID="wa-modal" visible={!!waOpen} title={waOpen?.title ?? ''} onClose={() => setWaOpen(null)} width={620}
+        footer={<><Button title="Fechar" variant="secondary" onPress={() => setWaOpen(null)} /><Button testID="wa-open" title="Abrir no WhatsApp" icon="💬" variant="success" disabled={!waOpen?.url} onPress={() => waOpen?.url && Linking.openURL(waOpen.url)} /></>}>
         <Text style={styles.modalText}>{waOpen?.text}</Text>
-        <Input label="Link wa.me" value={waOpen?.url ?? ''} editable={false} multiline rows={3} />
+        <Input testID="wa-link" label="Link wa.me" value={waOpen?.url ?? ''} editable={false} multiline rows={3} />
       </Modal>
     </Screen>
   );

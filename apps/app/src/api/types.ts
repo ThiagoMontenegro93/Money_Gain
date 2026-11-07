@@ -25,6 +25,7 @@ export interface UserDTO {
   name: string;
   email: string;
   phone: string | null;
+  pixKey?: string | null;
   role: Role;
   isActive: boolean;
   commissionPercent: number;
@@ -128,6 +129,8 @@ export interface ClientDetail extends ClientListItem {
   form: ClientForm;
   progress: { percent: number; filled: number; total: number };
   whatsappImportedAt: string | null;
+  whatsappOptOut?: boolean;
+  negativadoEm?: string | null;
   lgpdConsentAt: string | null;
   scoreDetail: ScoreResult;
   creditLock: CreditLock;
@@ -322,4 +325,151 @@ export interface DashboardDTO {
   topBons: ClientListItem[];
   topPiores: ClientListItem[];
   upcoming: { loanId: string; clientName: string; dueDate: string; valueCents: number; number: number }[];
+}
+
+// ---------------------------------------------------------------------------
+// Fase 2: usuários, WhatsApp, documentos e comprovantes
+// ---------------------------------------------------------------------------
+
+export interface UpdateMeBody {
+  phone?: string | null;
+  pixKey?: string | null;
+  currentPassword?: string;
+  newPassword?: string;
+}
+
+export interface UpdateUserBody {
+  name?: string;
+  phone?: string | null;
+  pixKey?: string | null;
+  role?: Role;
+  isActive?: boolean;
+  commissionPercent?: number;
+  revolving?: boolean;
+}
+
+export type WaProvider = 'EVOLUTION' | 'META' | 'LINK';
+
+export interface WhatsAppConfigDTO {
+  enabled: boolean;
+  provider: WaProvider;
+  baseUrl: string;
+  instance: string;
+  metaPhoneNumberId: string;
+  windowStart: string;
+  windowEnd: string;
+  sendTime: string;
+  autoPaymentOk: boolean;
+  notifyGuarantorD7: boolean;
+  blacklist: string[];
+  hasApiKey: boolean;
+  hasMetaToken: boolean;
+  queue: 'BULLMQ' | 'MEMORIA';
+}
+
+/** Segredos: omitido = mantém; string vazia/null = remove. */
+export type WhatsAppConfigBody = Partial<Omit<WhatsAppConfigDTO, 'hasApiKey' | 'hasMetaToken' | 'queue'>> & { apiKey?: string | null; metaToken?: string | null };
+
+export interface MessageTemplateDTO {
+  key: string;
+  label: string;
+  when: string;
+  text: string;
+  isDefault: boolean;
+}
+
+export type MessageStatus = 'PENDENTE' | 'ENVIADO' | 'FALHOU' | 'LINK_GERADO' | 'BLOQUEADO' | 'CANCELADO';
+
+export interface MessageLogDTO {
+  id: string;
+  template: string;
+  toPhone: string;
+  toName: string | null;
+  body: string;
+  channel: string;
+  status: MessageStatus | string;
+  attempts: number;
+  lastError: string | null;
+  waLink: string | null;
+  scheduledFor: string;
+  sentAt: string | null;
+  createdAt: string;
+  client: { id: string; fullName: string } | null;
+}
+
+export interface MessagingStatusDTO {
+  queue: 'BULLMQ' | 'MEMORIA';
+  jobs: Record<string, number> | null;
+  byStatus: Partial<Record<MessageStatus, number>>;
+}
+
+export interface CollectionMessageResult {
+  id: string;
+  text: string;
+  waLink: string | null;
+  phone: string;
+}
+
+export type DocumentType = 'RG' | 'CPF' | 'COMPROVANTE_RESIDENCIA' | 'COMPROVANTE_RENDA' | 'SELFIE' | 'CONTRATO' | 'FIADOR_FOTO' | 'COMPROVANTE_PAGAMENTO_CLIENTE';
+export type DocumentStatus = 'VERIFICADO' | 'PENDENTE' | 'VENCIDO';
+
+export interface ClientDocumentDTO {
+  id: string;
+  type: DocumentType;
+  label: string;
+  fileId: string;
+  mimeType: string | null;
+  originalName: string | null;
+  isVerified: boolean;
+  verifiedAt: string | null;
+  expiryDate: string | null;
+  status: DocumentStatus;
+  notes: string | null;
+  views: number;
+  createdAt: string;
+}
+
+export interface CreateDocumentBody {
+  type: DocumentType;
+  fileId: string;
+  expiryDate?: string | null;
+  notes?: string | null;
+}
+
+export interface ClientReceiptDTO {
+  id: string;
+  fileId: string;
+  mimeType: string | null;
+  sentAt: string;
+  informedValueCents: number | null;
+  status: 'PENDENTE_CONFERENCIA' | 'CONFERIDO';
+  notes: string | null;
+  checkedAt: string | null;
+  payment: { id: string; loanCode: number; type: string; status: string; valueCents: number } | null;
+  createdAt: string;
+  autoLinked?: boolean;
+}
+
+export interface CreateReceiptBody {
+  fileId: string;
+  sentAt: string;
+  informedValueCents?: number | null;
+  notes?: string | null;
+}
+
+// ---------------------------------------------------------------- Fase 3: backup
+export interface BackupDTO {
+  id: string; fileName: string; sizeBytes: number; totalClientes: number; totalEmprestimos: number; totalParcelas: number;
+  isAutomatic: boolean; isRestore: boolean; emailSentTo: string | null; createdAt: string; available: boolean; createdBy?: string | null;
+}
+export interface BackupList { backups: BackupDTO[]; restores: BackupDTO[]; smtpConfigured: boolean }
+export interface BackupEmailConfig { enabled: boolean; email: string; extraEmails: string[] }
+export interface RestorePreview {
+  token: string | null; valid: boolean; encrypted: boolean; fileName: string; backupCreatedAt: string | null; summary: string | null;
+  counts: Record<string, number>; errors: string[]; warnings: string[]; distribution: string[];
+  offlinePayments: { row: number; loanCode: number; type: string; amountCents: number; paidAt: string }[];
+}
+export interface RestoreResult {
+  message: string; safetyBackupId: string; counts: Record<string, number>;
+  offlinePaymentsCreated: string[]; offlinePaymentsSkipped: string[]; reloginRequired: boolean;
 }

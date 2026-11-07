@@ -11,7 +11,8 @@ import { Badge, Button, Card, Checkbox, Column, Empty, ErrorState, Grid, InlineE
 import { useAsync } from '@/hooks/useAsync';
 import { useLayout } from '@/hooks/useLayout';
 import { colors } from '@/theme';
-import { brl, dateTimeBR, parseDecimal, TRANSFER_LABEL } from '@/utils/format';
+import { brl, dateTimeBR, decimalText, parseDecimal, TRANSFER_LABEL } from '@/utils/format';
+import { formatPhone } from '@lendcontrol/core';
 
 interface TransferIntent {
   type: TransferType;
@@ -62,6 +63,37 @@ function Ledger({ userId }: { userId?: string }) {
   return <Table testID="ledger" columns={cols} rows={data ?? []} keyOf={(e) => e.id} minWidth={720} empty={<Empty text="Sem movimentações no razão" icon="📒" />} />;
 }
 
+function UsersList({ users, meId, onEdit }: { users: UserDTO[]; meId?: string; onEdit: (u: UserDTO) => void }) {
+  const { isDesktop } = useLayout();
+  const status = (u: UserDTO) => (u.isActive ? <Badge size="sm" text="Ativo" bg="#064E3B" color="#A7F3D0" /> : <Badge size="sm" text="Inativo" bg="#374151" />);
+  if (!isDesktop) {
+    return (
+      <View testID="users-list">
+        {users.map((u) => (
+          <View key={u.id} style={styles.lrow}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ color: colors.text, fontWeight: '700' }}>{u.name}{u.id === meId ? ' (você)' : ''}</Text>
+              <Text style={{ color: colors.textDim, fontSize: 12 }} numberOfLines={1}>{ROLE_LABEL[u.role]} · {u.commissionPercent}% · {u.email}</Text>
+            </View>
+            {status(u)}
+            <Button testID={`user-row-edit-${u.id}`} size="sm" variant="secondary" icon="✏️" title="Editar" onPress={() => onEdit(u)} />
+          </View>
+        ))}
+      </View>
+    );
+  }
+  const cols: Column<UserDTO>[] = [
+    { key: 'name', title: 'Nome', flex: 2, render: (u) => `${u.name}${u.id === meId ? ' (você)' : ''}` },
+    { key: 'email', title: 'E-mail', flex: 2, render: (u) => u.email },
+    { key: 'role', title: 'Papel', width: 130, render: (u) => ROLE_LABEL[u.role] },
+    { key: 'pix', title: 'PIX', flex: 1, render: (u) => u.pixKey || '—' },
+    { key: 'com', title: 'Comissão', width: 100, align: 'right', render: (u) => `${decimalText(u.commissionPercent)}%` },
+    { key: 'st', title: 'Status', width: 90, render: status },
+    { key: 'act', title: '', width: 100, align: 'right', render: (u) => <Button testID={`user-row-edit-${u.id}`} size="sm" variant="secondary" icon="✏️" title="Editar" onPress={() => onEdit(u)} /> },
+  ];
+  return <Table testID="users-list" columns={cols} rows={users} keyOf={(u) => u.id} minWidth={760} />;
+}
+
 export default function Team() {
   const { user, hasRole, refreshMe } = useAuth();
   const toast = useToast();
@@ -80,6 +112,11 @@ export default function Team() {
   const [nu, setNu] = useState({ name: '', email: '', password: '', phone: '', role: 'OPERATOR' as Role, commission: '30', revolving: true });
   const [cBusy, setCBusy] = useState(false);
   const [cErr, setCErr] = useState<string | null>(null);
+  const [edit, setEdit] = useState<UserDTO | null>(null);
+  const [eu, setEu] = useState({ name: '', phone: '', pixKey: '', role: 'OPERATOR' as Role, commission: '', revolving: true, isActive: true });
+  const [eBusy, setEBusy] = useState(false);
+  const [eErr, setEErr] = useState<string | null>(null);
+  const { data: allUsers, reload: reloadUsers } = useAsync(() => (isOwner ? api.users.list() : Promise.resolve([] as UserDTO[])), [isOwner]);
 
   const cols = isWide ? 5 : isDesktop ? 3 : 2;
   const me = wallets?.find((w) => w.id === user?.id) ?? user ?? null;
@@ -110,7 +147,7 @@ export default function Team() {
   };
 
   const createUser = async () => {
-    if (!nu.name.trim() || !nu.email.trim() || nu.password.length < 6) return setCErr('Informe nome, e-mail e senha (mínimo 6 caracteres)');
+    if (!nu.name.trim() || !nu.email.trim() || nu.password.length < 8) return setCErr('Informe nome, e-mail e senha (mínimo 8 caracteres)');
     setCBusy(true);
     setCErr(null);
     try {
@@ -123,6 +160,32 @@ export default function Team() {
       setCErr(errorMessage(e));
     } finally {
       setCBusy(false);
+    }
+  };
+
+  const openEdit = (u: UserDTO) => {
+    setEu({ name: u.name, phone: u.phone ? formatPhone(u.phone) : '', pixKey: u.pixKey ?? '', role: u.role, commission: decimalText(u.commissionPercent), revolving: u.revolving, isActive: u.isActive });
+    setEErr(null);
+    setEdit(u);
+  };
+
+  const saveEdit = async () => {
+    if (!edit) return;
+    if (eu.name.trim().length < 2) return setEErr('Informe o nome');
+    const pct = parseDecimal(eu.commission);
+    if (pct == null || pct < 0 || pct > 100) return setEErr('Comissão deve estar entre 0 e 100%');
+    setEBusy(true);
+    setEErr(null);
+    try {
+      await api.users.update(edit.id, { name: eu.name.trim(), phone: eu.phone.trim() || null, pixKey: eu.pixKey.trim() || null, role: eu.role, commissionPercent: pct, revolving: eu.revolving, isActive: eu.isActive });
+      toast('Usuário atualizado');
+      setEdit(null);
+      await Promise.all([reload(), reloadUsers(), edit.id === user?.id ? refreshMe() : Promise.resolve()]);
+    } catch (e) {
+      toast(errorMessage(e), 'error');
+      setEErr(errorMessage(e));
+    } finally {
+      setEBusy(false);
     }
   };
 
@@ -170,6 +233,7 @@ export default function Team() {
                   {isOwner ? <Button size="sm" title="Repassar Capital" icon="💸" onPress={() => openTransfer({ type: 'REPASSE_CAPITAL', to: u })} /> : null}
                   {isOwner ? <Button size="sm" title="Pagar Comissão" icon="💼" variant="secondary" disabled={!u.wallet.comissaoAPagarCents} onPress={() => openTransfer({ type: 'PAGAMENTO_COMISSAO', to: u, max: u.wallet.comissaoAPagarCents })} /> : null}
                   <Button size="sm" title="Extrato" icon="📒" variant="ghost" onPress={() => setLedgerUser(u.id)} />
+                  {isOwner ? <Button testID={`edit-user-${u.id}`} size="sm" title="Editar" icon="✏️" variant="secondary" onPress={() => openEdit(u)} /> : null}
                 </View>
               }
             >
@@ -178,6 +242,12 @@ export default function Team() {
             </Card>
           ))}
         </>
+      ) : null}
+
+      {isOwner && allUsers?.length ? (
+        <Card title="👥 Usuários do sistema" style={{ marginBottom: 12, padding: isDesktop ? 16 : 10 }} testID="users-card">
+          <UsersList users={allUsers} meId={user?.id} onEdit={openEdit} />
+        </Card>
       ) : null}
 
       <Card title="↔️ Repasses" style={{ marginBottom: 12 }}>
@@ -205,6 +275,22 @@ export default function Team() {
         <InlineError message={tErr} />
       </Modal>
 
+      <Modal testID="edit-user-modal" visible={!!edit} title={`✏️ Editar ${edit?.name ?? ''}`} onClose={() => setEdit(null)} width={620}
+        footer={<><Button title="Cancelar" variant="secondary" onPress={() => setEdit(null)} /><Button testID="edit-user-submit" title="Salvar" variant="success" loading={eBusy} onPress={() => void saveEdit()} /></>}>
+        <Text style={{ color: colors.textMuted, marginBottom: 10, fontWeight: '600' }}>{edit?.email}</Text>
+        <Input testID="eu-name" label="Nome" required value={eu.name} onChangeText={(v) => setEu({ ...eu, name: v })} />
+        <Stack row={isDesktop} style={styles.row}>
+          <Input testID="eu-phone" label="Telefone" mask="phone" value={eu.phone} onChangeText={(v) => setEu({ ...eu, phone: v })} placeholder="(21) 99999-9999" style={{ flex: 1 }} />
+          <Input testID="eu-pix" label="Chave PIX" value={eu.pixKey} onChangeText={(v) => setEu({ ...eu, pixKey: v })} placeholder="Opcional" autoCapitalize="none" style={{ flex: 1 }} />
+        </Stack>
+        <Input testID="eu-commission" label="Comissão % sobre juros" mask="decimal" value={eu.commission} onChangeText={(v) => setEu({ ...eu, commission: v })} />
+        <Segmented testIDPrefix="eu-role" label="Papel" value={eu.role} onChange={(v) => setEu({ ...eu, role: v })} options={[{ value: 'OPERATOR', label: 'Funcionário' }, { value: 'ADMIN', label: 'Administrador' }, { value: 'SUPER_ADMIN', label: 'Dono' }]} />
+        <Checkbox checked={eu.revolving} onChange={(v) => setEu({ ...eu, revolving: v })} label="Revolving: principal recebido volta para o funcionário re-emprestar" />
+        <Checkbox testID="eu-active" checked={eu.isActive} onChange={(v) => setEu({ ...eu, isActive: v })} label={eu.isActive ? 'Ativo (pode entrar no sistema)' : 'Inativo: não consegue mais fazer login'} />
+        {edit?.id === user?.id ? <Text style={{ color: colors.warning, fontSize: 12, fontWeight: '700' }}>Você está editando o seu próprio usuário: não é possível se desativar ou se rebaixar.</Text> : null}
+        <InlineError message={eErr} />
+      </Modal>
+
       <Modal testID="user-modal" visible={createOpen} title="➕ Novo Funcionário" onClose={() => setCreateOpen(false)} width={620}
         footer={<><Button title="Cancelar" variant="secondary" onPress={() => setCreateOpen(false)} /><Button testID="user-submit" title="Criar" variant="success" loading={cBusy} onPress={() => void createUser()} /></>}>
         <Input label="Nome" required value={nu.name} onChangeText={(v) => setNu({ ...nu, name: v })} placeholder="Nome do funcionário" />
@@ -213,7 +299,7 @@ export default function Team() {
           <Input label="Telefone" mask="phone" value={nu.phone} onChangeText={(v) => setNu({ ...nu, phone: v })} placeholder="(21) 99999-9999" style={{ flex: 1 }} />
         </Stack>
         <Stack row={isDesktop} style={styles.row}>
-          <Input label="Senha inicial" required secure value={nu.password} onChangeText={(v) => setNu({ ...nu, password: v })} placeholder="Mínimo 6 caracteres" style={{ flex: 1 }} autoCapitalize="none" />
+          <Input label="Senha inicial" required secure value={nu.password} onChangeText={(v) => setNu({ ...nu, password: v })} placeholder="Mínimo 8 caracteres" style={{ flex: 1 }} autoCapitalize="none" />
           <Input label="Comissão % sobre juros" mask="decimal" value={nu.commission} onChangeText={(v) => setNu({ ...nu, commission: v })} style={{ flex: 1 }} />
         </Stack>
         <Segmented label="Papel" value={nu.role} onChange={(v) => setNu({ ...nu, role: v })} options={[{ value: 'OPERATOR', label: 'Funcionário' }, { value: 'ADMIN', label: 'Administrador' }]} />

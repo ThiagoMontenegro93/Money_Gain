@@ -11,7 +11,9 @@
     "build:web": "expo export --platform web",
     "typecheck": "tsc --noEmit",
     "test:responsive": "node e2e/responsive.js ../../docs/screenshots",
-    "test:flow": "node e2e/flow.js ../../docs/screenshots"
+    "test:flow": "node e2e/flow.js ../../docs/screenshots",
+    "test:fase2": "node e2e/fase2.js ../../docs/screenshots",
+    "test:fase3": "node e2e/fase3.js ../../docs/screenshots"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",

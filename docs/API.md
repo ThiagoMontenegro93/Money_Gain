@@ -1,4 +1,4 @@
-# LendControl Pro V6.5 — Contrato da API (Fases 1 e 2)
+# LendControl Pro V6.5 — Contrato da API (Fases 1, 2 e 3)
 
 Base: `http://localhost:3000/api` · Autenticação: `Authorization: Bearer <accessToken>`.
 
@@ -212,6 +212,19 @@ Fora da janela (padrão 08:00–20:00, America/Sao_Paulo) a mensagem é adiada p
 | PUT | /clients/:id/whatsapp-opt-out | `{ optOut }` |
 
 Status do documento: `VERIFICADO`, `PENDENTE`, `VENCIDO` (validade passou).
+
+## Backup e restauração (Fase 3, só SUPER_ADMIN)
+| GET | /backups | `{ backups: últimos 10, restores: últimas 10 restaurações, smtpConfigured }` |
+| POST | /backups | gera backup agora |
+| GET | /backups/:id/download | planilha `.xlsx` |
+| POST | /backups/:id/encrypted | `{ password }` (mín. 8) → arquivo `.lcbak` (AES-256-GCM, chave derivada com scrypt) |
+| POST | /backups/:id/email | envia o backup para os e-mails configurados |
+| GET/PUT | /backups/settings | `{ enabled, email, extraEmails[] }` |
+| POST | /backups/settings/test | gera um backup e envia agora ("Testar envio agora") |
+| POST | /backups/restore/preview | multipart `file` (+ `filePassword` se `.lcbak`) → `{ valid, token, summary, counts, distribution[], errors[], warnings[], offlinePayments[] }` |
+| POST | /backups/restore | `{ token, password }` (senha do Super Admin) → `{ message, safetyBackupId, counts, offlinePaymentsCreated[], offlinePaymentsSkipped[] }` |
+
+Automático toda segunda 08:00 (America/Sao_Paulo); se o e-mail estiver ativo, envia em seguida. O token da validação vale 30 minutos e é de uso único.
 
 ## Notificações
 | GET | /notifications | `{ id, title, message, readAt, createdAt }[]` |

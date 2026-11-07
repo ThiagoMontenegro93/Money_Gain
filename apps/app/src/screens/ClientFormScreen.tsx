@@ -28,6 +28,7 @@ import { ClientLookupField } from '@/components/ClientLookupField';
 import { FileSlot } from '@/components/FileSlot';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
+import { ClientDocuments } from '@/components/ClientDocuments';
 import { Badge, Button, Checkbox, ErrorState, InlineError, Input, Loading, MoneyInput, Notice, ProgressBar, ScoreSelector, Section, Segmented, Select, Tabs, Stack } from '@/components/ui';
 import { WhatsAppImporter } from '@/components/WhatsAppImporter';
 import { useLayout } from '@/hooks/useLayout';
@@ -398,7 +399,6 @@ export function ClientFormScreen({ clientId }: { clientId?: string }) {
 
       {tab === 5 && (
         <>
-          <Notice tone="info" text="📁 Nesta fase você pode anexar a selfie do cliente e a foto do documento do fiador (armazenamento privado com URL assinada de 5 minutos). A galeria completa de documentos (RG, CPF, comprovantes de residência/renda, contrato, comprovantes enviados pelo cliente, verificação e validade) chega na Fase 2." />
           <Section title="Documentos Oficiais">
             <RowF>
               <View style={{ flex: 1 }}>
@@ -409,6 +409,7 @@ export function ClientFormScreen({ clientId }: { clientId?: string }) {
               </View>
             </RowF>
           </Section>
+          {clientId ? <ClientDocuments clientId={clientId} /> : <Notice tone="info" text="📁 Salve a ficha para abrir a galeria de documentos (RG, CPF, comprovantes de residência/renda, contrato) e os comprovantes enviados pelo cliente." />}
           {e.lgpdConsent ? <InlineError message={e.lgpdConsent} /> : null}
         </>
       )}

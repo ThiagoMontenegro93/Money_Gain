@@ -59,3 +59,46 @@ export const LOAN_TYPE_LABEL: Record<string, string> = {
 
 export const LOAN_STATUS_LABEL: Record<string, string> = { ATIVO: 'Ativo', QUITADO: 'Quitado', PERDA: 'Perda', CANCELADO: 'Cancelado' };
 export const CLIENT_STATUS_LABEL: Record<string, string> = { RASCUNHO: 'Rascunho', ATIVO: 'Ativo', INATIVO: 'Inativo' };
+
+export const MESSAGE_STATUS_LABEL: Record<string, string> = {
+  PENDENTE: 'Na fila',
+  ENVIADO: 'Enviado',
+  FALHOU: 'Falhou',
+  LINK_GERADO: 'Link wa.me',
+  BLOQUEADO: 'Bloqueado',
+  CANCELADO: 'Cancelado',
+};
+
+export const MESSAGE_STATUS_COLOR: Record<string, { bg: string; color: string }> = {
+  PENDENTE: { bg: '#B45309', color: '#FFFFFF' },
+  ENVIADO: { bg: '#059669', color: '#FFFFFF' },
+  FALHOU: { bg: '#B91C1C', color: '#FFFFFF' },
+  LINK_GERADO: { bg: '#1D4ED8', color: '#FFFFFF' },
+  BLOQUEADO: { bg: '#374151', color: '#E5E7EB' },
+  CANCELADO: { bg: '#374151', color: '#E5E7EB' },
+};
+
+export const TEMPLATE_LABEL_EXTRA: Record<string, string> = { TESTE: 'Teste' };
+
+export const DOCUMENT_TYPES: { value: string; label: string; icon: string }[] = [
+  { value: 'RG', label: 'RG', icon: '🪪' },
+  { value: 'CPF', label: 'CPF', icon: '🪪' },
+  { value: 'COMPROVANTE_RESIDENCIA', label: 'Comprovante de residência', icon: '🏠' },
+  { value: 'COMPROVANTE_RENDA', label: 'Comprovante de renda', icon: '💼' },
+  { value: 'SELFIE', label: 'Selfie', icon: '🤳' },
+  { value: 'CONTRATO', label: 'Contrato assinado', icon: '📝' },
+  { value: 'FIADOR_FOTO', label: 'Documento do fiador', icon: '🤝' },
+  { value: 'COMPROVANTE_PAGAMENTO_CLIENTE', label: 'Comprovante de pagamento', icon: '🧾' },
+];
+
+export const DOC_STATUS_COLOR: Record<string, { bg: string; color: string; label: string }> = {
+  VERIFICADO: { bg: '#059669', color: '#FFFFFF', label: '✓ Verificado' },
+  PENDENTE: { bg: '#D97706', color: '#FFFFFF', label: '⏳ Pendente' },
+  VENCIDO: { bg: '#B91C1C', color: '#FFFFFF', label: '⚠ Vencido' },
+};
+
+export const WA_PROVIDER_LABEL: Record<string, string> = {
+  EVOLUTION: 'Evolution API (QR code)',
+  META: 'Meta Cloud API (oficial)',
+  LINK: 'Só link wa.me (manual)',
+};

@@ -10,16 +10,20 @@ const OUT = process.argv[2];
   const clients = (await fetch(API + '/clients', { headers: h }).then(j)).items;
   const loans = await fetch(API + '/loans', { headers: h }).then(j);
   const byCls = (c) => clients.find((x) => x.classificacao === c).id;
+  const carlosClient = clients.find((x) => x.responsible && x.responsible.name.startsWith('Carlos') && x.status === 'ATIVO').id;
   const routes = [
     ['dashboard', '/'], ['clients', '/clients'], ['client-new', '/clients/new'],
     ['client-bom', `/clients/${byCls('BOM')}`], ['client-ruim', `/clients/${byCls('RUIM')}`], ['client-perda', `/clients/${byCls('PERDA')}`],
     ['client-edit', `/clients/${byCls('BOM')}/edit`], ['loans', '/loans'], ['loan-new', '/loans/new'],
     ['loan-detail', `/loans/${loans.find((l) => l.overdueCount > 0).id}`], ['approvals', '/approvals'], ['team', '/team'], ['settings', '/settings'],
+    // Fase 2
+    ['settings-whatsapp', '/settings?tab=whatsapp'], ['settings-templates', '/settings?tab=templates'], ['messages-log', '/settings?tab=mensagens'], ['settings-backup', '/settings?tab=backup'],
+    ['client-cobranca', `/clients/${byCls('RUIM')}?tab=2`], ['client-docs', `/clients/${byCls('BOM')}?tab=5`], ['client-docs-own', `/clients/${carlosClient}?tab=5`],
   ];
-  const vps = [['desktop', 1440, 900], ['laptop', 1280, 800], ['tablet', 768, 1024], ['mobile', 390, 844]];
+  const vps = [['desktop', 1440, 900], ['laptop', 1280, 800], ['tablet', 768, 1024], ['mobile', 390, 844], ['small', 360, 740]];
   const browser = await chromium.launch();
   const failures = [];
-  for (const role of ['thiago@lendcontrol.app', 'carlos@lendcontrol.app']) {
+  for (const role of ['thiago@lendcontrol.app', 'carlos@lendcontrol.app', 'gestor@lendcontrol.app']) {
     const auth = await login(role);
     for (const [vname, w, hgt] of vps) {
       const ctx = await browser.newContext({ viewport: { width: w, height: hgt }, deviceScaleFactor: 1 });
@@ -41,7 +45,10 @@ const OUT = process.argv[2];
         await page.waitForURL((u) => !u.pathname.includes('login'), { timeout: 10000 }).catch(() => {});
       }
       for (const [name, path] of routes) {
-        if (role.startsWith('carlos') && /client-(bom|ruim|perda|edit)|loan-detail/.test(name)) continue;
+        if (role.startsWith('carlos') && /client-(bom|ruim|perda|edit|cobranca|docs$)|loan-detail/.test(name)) continue;
+        if (role.startsWith('thiago') && name === 'client-docs-own') continue;
+        if (!role.startsWith('thiago') && name === 'settings-backup') continue;
+        if (role.startsWith('gestor') && !/settings-|messages-log|client-cobranca|client-docs$/.test(name)) continue;
         errors.length = 0;
         await page.goto(BASE + path);
         await page.waitForLoadState('networkidle').catch(() => {});

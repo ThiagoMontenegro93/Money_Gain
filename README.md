@@ -45,10 +45,12 @@ O seed cria 6 clientes reais de teste cobrindo BOM, REGULAR, RUIM e PERDA.
 
 ```bash
 pnpm --filter @lendcontrol/core test   # 38 testes do motor, score, importador e mensagens
-pnpm --filter @lendcontrol/api test    # reaplica o seed e roda 42 testes ponta a ponta contra a API rodando (inclui um mock da Evolution API na porta 3999)
+pnpm --filter @lendcontrol/api test    # reaplica o seed e roda 49 testes ponta a ponta contra a API rodando (mock da Evolution API na porta 3999 e SMTP de teste na 2526)
 # Com a API servindo o build web em http://localhost:3000:
-pnpm --filter @lendcontrol/app test:responsive  # 13 telas × 4 larguras (1440, 1280, 768, 390) × 2 perfis: sem estouro horizontal, sem erro de console
+pnpm --filter @lendcontrol/app test:responsive  # telas × 5 larguras (1440, 1280, 768, 390, 360) × 3 perfis: sem estouro horizontal, sem erro de console
 pnpm --filter @lendcontrol/app test:flow        # fluxo real: funcionário no celular importa WhatsApp → cadastra → empresta → lança recibo; dono aprova no desktop
+pnpm --filter @lendcontrol/app test:fase2       # WhatsApp (provedor, template, cobrança firme), documentos com marca d'água, comprovantes, PDFs
+pnpm --filter @lendcontrol/app test:fase3       # e-mail do backup, baixar, criptografar, validar e restaurar pela tela
 ```
 Screenshots das telas e dos fluxos ficam em `docs/screenshots/`.
 
@@ -87,9 +89,17 @@ Decisões em que interpretei a especificação estão em `docs/DECISOES.md`.
 - **Cobrança**: mensagem firme e aviso ao fiador por wa.me, carta de cobrança e dossiê jurídico em PDF, negativação.
 - **Perfil**: chave PIX do credor usada nas mensagens; edição de usuários pelo dono.
 
+## Fase 3 (entregue)
+
+- **Backup semanal** toda segunda 08:00 em Excel com 7 abas (clientes, empréstimos, parcelas, pagamentos, carteira,
+  repasses, resumo) e as regras do negócio em fórmulas prontas em 500 linhas: dias de atraso, valor com multa, total
+  para quitar, status pelo score com cores, disponível da carteira e calculadora com projeção 3x (EDATE).
+- **Histórico** dos 10 últimos backups para baixar; **restauração** validada (abas, colunas e integridade), com prévia
+  "Planilha de dd/mm/aaaa encontrada…", senha do Super Admin e backup automático antes de sobrescrever.
+- **E-mail** do backup editável em Configurações (principal + adicionais, ativar/desativar, testar envio) e
+  **exportação criptografada** com senha.
+
 ## Roadmap
 
-- **Fase 3**: backup semanal em Excel (7 abas, fórmulas BANE, 500 linhas com 6 clientes reais), histórico dos 10 últimos,
-  restauração validada com senha, envio por e-mail configurável, exportação criptografada.
 - **Fase 4**: offline-first no app (fila de sincronização), builds EAS (APK/IPA), deploy (Docker + Postgres gerenciado),
   monitoramento e backups do banco.
