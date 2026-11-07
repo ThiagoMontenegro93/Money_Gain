@@ -49,7 +49,7 @@ interface WalletDTO {
   overdueClients: number;
   topBons: ClientListItem[];  // top 5
   topPiores: ClientListItem[];// top 5 (ação urgente)
-  upcoming: { loanId: string; clientName: string; dueDate: string; valueCents: number; number: number }[]; // próximos 7 dias
+  upcoming: { loanId: string; clientName: string; dueDate: string; valueCents: number; number: number }[]; // parcelas em aberto até hoje+7 dias (inclui atrasadas), ordenadas por vencimento
 }
 ```
 Para OPERATOR os números são restritos aos seus empréstimos/clientes.
@@ -74,7 +74,7 @@ interface ClientListItem {
   score: number; classificacao: 'BOM'|'REGULAR'|'RUIM'|'PERDA'; pontualidade: number | null;
   diasSemPagar: number; isBlocked: boolean;
   responsible: { id: string; name: string } | null;
-  activeLoans: number; totalEmprestadoCents: number; emAbertoCents: number; overdueCount: number;
+  activeLoans: number; totalEmprestadoCents: number; emAbertoCents: number /* dívida atualizada (soma payoffCents) */; overdueCount: number;
   createdAt: string;
 }
 interface ClientDetail extends ClientListItem {
@@ -119,7 +119,7 @@ interface LoanSummary {
   lender: { id: string; name: string }; funder: { id: string; name: string };
   type: string; method: string; principalCents: number; ratePercent: number; multaDiaPercent: number;
   releaseDate: string; dueDate: string; status: 'ATIVO'|'QUITADO'|'PERDA'|'CANCELADO';
-  saldoDevedorCents: number; nextDueDate: string | null; nextValueCents: number | null;
+  saldoDevedorCents: number; payoffCents: number /* dívida atualizada p/ quitar hoje */; nextDueDate: string | null; nextValueCents: number | null;
   overdueCount: number; diasSemPagar: number; quitadoEm: string | null;
 }
 interface LoanDetail extends LoanSummary {

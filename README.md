@@ -45,8 +45,14 @@ O seed cria 6 clientes reais de teste cobrindo BOM, REGULAR, RUIM e PERDA.
 
 ```bash
 pnpm --filter @lendcontrol/core test   # 33 testes do motor, score e importador
-pnpm --filter @lendcontrol/api test    # reaplica o seed e roda 24 testes ponta a ponta contra a API rodando
+pnpm --filter @lendcontrol/api test    # reaplica o seed e roda 27 testes ponta a ponta contra a API rodando
+# Com a API servindo o build web em http://localhost:3000:
+pnpm --filter @lendcontrol/app test:responsive  # 13 telas × 4 larguras (1440, 1280, 768, 390) × 2 perfis: sem estouro horizontal, sem erro de console
+pnpm --filter @lendcontrol/app test:flow        # fluxo real: funcionário no celular importa WhatsApp → cadastra → empresta → lança recibo; dono aprova no desktop
 ```
+Screenshots das telas e dos fluxos ficam em `docs/screenshots/`.
+
+> Campos de valor (R$) usam máscara estilo caixa: os dígitos entram como centavos (digitar `100000` mostra `R$ 1.000,00`).
 
 ## Regras de negócio implementadas (Fase 1)
 

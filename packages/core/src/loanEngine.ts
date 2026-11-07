@@ -13,7 +13,7 @@
  *  - Multa diária: ValorAtual = Parcela * (1 + %multa_dia * dias_atraso).
  */
 import { addDays, addMonthsAnchored, diffDays, ISODate, isoToBR } from './dates';
-import { Cents, pct, roundCents } from './money';
+import { Cents, formatBRL, pct, roundCents } from './money';
 
 export type LoanMethod = 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
 export type LoanType = 'INTEREST_ONLY' | 'FIXED_INSTALLMENT';
@@ -358,7 +358,7 @@ function assertAmount(amount: Cents, due: Cents, label: string) {
   if (amount < due)
     throw new LoanEngineError(
       'INSUFFICIENT_AMOUNT',
-      `Valor insuficiente para ${label}: devido ${(due / 100).toFixed(2)}, informado ${(amount / 100).toFixed(2)}`,
+      `Valor insuficiente para ${label}: devido ${formatBRL(due)}, informado ${formatBRL(amount)}`,
     );
 }
 
@@ -515,7 +515,7 @@ export function onPayFixedInstallment(loan: EngineLoan, installments: EngineInst
     cancelledCount: 0,
     message: finished
       ? `Última parcela paga. Empréstimo quitado em ${isoToBR(p.asOf)}`
-      : `Parcela ${target.number} paga. Saldo devedor: ${(saldo / 100).toFixed(2)}`,
+      : `Parcela ${target.number} paga. Saldo devedor: ${formatBRL(saldo)}`,
   };
 }
 
@@ -553,7 +553,7 @@ export function onAmortize(loan: EngineLoan, installments: EngineInstallment[], 
     allocation: { principalCents: p.amountCents, interestCents: 0, fineCents: 0, extraCents: 0 },
     installmentNumber: null,
     cancelledCount: 0,
-    message: `Amortização de ${(p.amountCents / 100).toFixed(2)} aplicada. Novo saldo: ${(saldo / 100).toFixed(2)}`,
+    message: `Amortização de ${formatBRL(p.amountCents)} aplicada. Novo saldo: ${formatBRL(saldo)}`,
   };
 }
 

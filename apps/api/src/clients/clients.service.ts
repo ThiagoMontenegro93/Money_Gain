@@ -213,7 +213,7 @@ export class ClientsService {
       responsible: cl.responsible,
       activeLoans: active.length,
       totalEmprestadoCents: active.reduce((s, l) => s + l.principalCents, 0),
-      emAbertoCents: active.reduce((s, l) => s + l.saldoDevedorCents, 0),
+      emAbertoCents: active.reduce((s, l) => s + l.payoffCents, 0),
       overdueCount: active.reduce((s, l) => s + l.overdueCount, 0),
       createdAt: cl.createdAt.toISOString(),
     };

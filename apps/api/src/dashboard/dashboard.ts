@@ -35,6 +35,7 @@ export class DashboardService {
         upcoming.push({ loanId: l.id, clientName: l.client.fullName, dueDate: i.dueDate, valueCents: viewInstallment(i, eLoan, asOf).updatedCents, number: i.number });
       }
     }
+    // Atrasadas primeiro (mais antigas), depois os próximos 7 dias
     upcoming.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
     const monthStart = asOf.slice(0, 8) + '01';
@@ -51,7 +52,7 @@ export class DashboardService {
     const { items, counts } = await this.clients.list(u, {});
     const withHistory = items.filter((x) => x.pontualidade !== null);
     const topBons = withHistory.filter((x) => x.classificacao === 'BOM').sort((a, b) => b.score - a.score || (b.pontualidade ?? 0) - (a.pontualidade ?? 0)).slice(0, 5);
-    const topPiores = items.filter((x) => x.classificacao === 'PERDA' || x.classificacao === 'RUIM' || x.overdueCount > 0)
+    const topPiores = items.filter((x) => x.classificacao === 'PERDA' || x.classificacao === 'RUIM' || (x.classificacao === 'REGULAR' && x.overdueCount > 0))
       .sort((a, b) => a.score - b.score || b.emAbertoCents - a.emAbertoCents).slice(0, 5);
 
     const [pPay, pTr] = await Promise.all([

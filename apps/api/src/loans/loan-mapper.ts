@@ -5,6 +5,7 @@ import {
   ISODate,
   openInstallments,
   quoteLoan,
+  simulatePayoff,
   diffDays,
   viewInstallment,
 } from '@lendcontrol/core';
@@ -73,6 +74,8 @@ export function loanSummary(l: LoanWith, asOf: ISODate) {
     dueDate: iso(l.dueDate)!,
     status: l.status,
     saldoDevedorCents: c(l.saldoDevedor),
+    /** Dívida atualizada para quitar hoje (saldo + juros do período + multas). */
+    payoffCents: active ? (simulatePayoff(eLoan, eInst, asOf)?.amountCents ?? 0) : 0,
     nextDueDate: next?.dueDate ?? null,
     nextValueCents: next ? next.updatedCents : null,
     overdueCount,

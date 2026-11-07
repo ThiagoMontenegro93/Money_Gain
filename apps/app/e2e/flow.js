@@ -1,0 +1,93 @@
+const { chromium } = require('playwright');
+const BASE = 'http://localhost:3000', API = BASE + '/api', OUT = process.argv[2];
+const cpfGen = () => { const d = String(Date.now()).slice(-9).split('').map(Number); const c = (l) => { let s = 0; for (let i = 0; i < l; i++) s += d[i] * (l + 1 - i); const r = (s * 10) % 11; return r === 10 ? 0 : r; }; d.push(c(9)); d.push(c(10)); return d.join(''); };
+const step = (m) => console.log('✓ ' + m);
+(async () => {
+  const browser = await chromium.launch();
+  const tid = (p, id) => p.locator(`[data-testid="${id}"]`).first();
+  const fill = async (p, id, v) => { const l = tid(p, id); const tag = await l.evaluate((e) => e.tagName); if (tag === 'INPUT' || tag === 'TEXTAREA') await l.fill(v); else await l.locator('input,textarea').first().fill(v); };
+  const login = async (p, email) => { await p.goto(BASE + '/login'); await fill(p, 'login-email', email); await fill(p, 'login-password', 'Lend@2026'); await tid(p, 'login-submit').click(); await p.waitForURL((u) => !u.pathname.includes('login')); };
+  const errors = [];
+  // ---------- Funcionário no celular ----------
+  const m = await (await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 })).newPage();
+  m.on('pageerror', (e) => errors.push(String(e)));
+  m.on('response', (r) => { if (r.url().includes('/api/') && r.status() >= 500) errors.push(`${r.status()} ${r.url()}`); });
+  await login(m, 'carlos@lendcontrol.app'); step('Carlos fez login no celular');
+  await m.goto(BASE + '/clients/new');
+  const doc = cpfGen();
+  await fill(m, 'wa-block', `Nome: Lucas Ferreira Teste\nCPF: ${doc}\nRG: 7654321 DETRAN\nNascimento: 22/07/1991\nWhatsApp: 21 99876-5432\nEndereço: Rua Washington 88, Tijuca, Rio - RJ\nCEP: 20745-000\nPonto Ref: Ao lado da padaria\nPIX: ${doc} (cpf)\nProfissão: Eletricista\nRenda: R$ 3.200\nEmergência: Joana Ferreira (Mãe) - 21 97654-1111`);
+  await tid(m, 'wa-interpret').click();
+  await tid(m, 'wa-preview').waitFor();
+  const previewText = await tid(m, 'wa-preview').innerText();
+  if (!/Encontramos \d+ de \d+ campos/.test(previewText)) throw new Error('preview sem contagem: ' + previewText.slice(0, 200));
+  await m.waitForTimeout(700); await m.screenshot({ path: `${OUT}/flow-m-01-preview.png` });
+  await tid(m, 'wa-confirm').click(); step('Importador WhatsApp interpretou o bloco e mostrou o preview');
+  await tid(m, 'lgpd').click().catch(() => {});
+  await tid(m, 'save-full').click();
+  await m.waitForURL(/\/clients\/(?!new)[^/]+$/, { timeout: 15000 });
+  const clientId = m.url().split('/').pop();
+  await m.screenshot({ path: `${OUT}/flow-m-02-client.png` }); step('Cliente salvo completo a partir do WhatsApp: ' + clientId);
+  const tok = (await fetch(API + '/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'thiago@lendcontrol.app', password: 'Lend@2026' }) }).then((r) => r.json())).accessToken;
+  const H = { authorization: 'Bearer ' + tok };
+  const cd = await fetch(`${API}/clients/${clientId}`, { headers: H }).then((r) => r.json());
+  if (cd.form.street !== 'Rua Washington' || cd.form.incomeCents !== 320000 || cd.source === 'MANUAL') throw new Error('dados importados incorretos: ' + JSON.stringify({ street: cd.form.street, income: cd.form.incomeCents }));
+  step('Dados conferidos na API (rua, renda R$ 3.200, origem WhatsApp)');
+
+  await tid(m, 'new-loan-btn').click();
+  await m.waitForURL(/\/loans\/new/);
+  await tid(m, 'step1-next').click();
+  await fill(m, 'principal', '100000'); // máscara estilo caixa: dígitos = centavos
+  await fill(m, 'rate', '10');
+  await fill(m, 'fine', '1');
+  const d = new Date(); d.setMonth(d.getMonth() - 1);
+  const rel = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  await fill(m, 'release', rel);
+  await tid(m, 'step2-next').click();
+  await m.waitForTimeout(800);
+  await m.screenshot({ path: `${OUT}/flow-m-03-review.png` });
+  await tid(m, 'create-loan').click();
+  if (await tid(m, 'risk-confirm').isVisible().catch(() => false)) await tid(m, 'risk-confirm').click();
+  await m.waitForURL(/\/loans\/(?!new)[^/]+$/, { timeout: 15000 });
+  const loanId = m.url().split('/').pop();
+  await tid(m, 'installment-timeline').waitFor();
+  await m.screenshot({ path: `${OUT}/flow-m-04-loan.png`, fullPage: true }); step('Empréstimo criado pelo wizard com timeline de projeção: ' + loanId);
+  let loan = await fetch(`${API}/loans/${loanId}`, { headers: H }).then((r) => r.json());
+  if (loan.installments.length !== 4 || loan.installments[0].originalCents !== 110000) throw new Error('parcelas inesperadas');
+
+  await tid(m, 'launch-receipt').click();
+  await tid(m, 'receipt-modal').waitFor();
+  const [chooser] = await Promise.all([m.waitForEvent('filechooser'), tid(m, 'receipt-file').locator('[role=button],button').first().click()]);
+  await chooser.setFiles({ name: 'pix.png', mimeType: 'image/png', buffer: Buffer.from('89504e470d0a1a0a0000000d494844520000000100000001080600000000', 'hex') });
+  await m.waitForTimeout(1200);
+  const amt = tid(m, 'receipt-amount'); const tag = await amt.evaluate((e) => e.tagName);
+  const amountVal = tag === 'INPUT' ? await amt.inputValue() : await amt.locator('input').first().inputValue();
+  await m.screenshot({ path: `${OUT}/flow-m-05-receipt.png` });
+  await tid(m, 'receipt-submit').click();
+  await m.waitForTimeout(1500);
+  const pend = await fetch(`${API}/payments?status=AGUARDANDO_APROVACAO&loanId=${loanId}`, { headers: H }).then((r) => r.json());
+  if (pend.length !== 1) throw new Error('recibo não ficou pendente');
+  step(`Recibo lançado com comprovante (valor sugerido ${amountVal}) e ficou AGUARDANDO_APROVACAO`);
+
+  // ---------- Dono no desktop ----------
+  const dsk = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })).newPage();
+  dsk.on('pageerror', (e) => errors.push(String(e)));
+  await login(dsk, 'thiago@lendcontrol.app');
+  await dsk.goto(BASE + '/approvals');
+  await tid(dsk, `approve-${pend[0].id}`).click();
+  await fill(dsk, 'prompt-password', 'Lend@2026');
+  await dsk.screenshot({ path: `${OUT}/flow-d-06-approve.png` });
+  await tid(dsk, 'prompt-confirm').click();
+  await dsk.waitForTimeout(2000);
+  loan = await fetch(`${API}/loans/${loanId}`, { headers: H }).then((r) => r.json());
+  const open = loan.installments.filter((i) => i.status === 'PENDENTE');
+  if (loan.installments[0].status !== 'PAGA' || open.length !== 4 || open[0].type !== 'QUITACAO_PREVISTA') throw new Error('aprovação não aplicou projeção');
+  step('Dono aprovou com senha: parcela 1 paga (juros), nova projeção criada, 3 futuras mantidas');
+  await dsk.goto(`${BASE}/loans/${loanId}`);
+  await tid(dsk, 'installment-timeline').waitFor();
+  await dsk.screenshot({ path: `${OUT}/flow-d-07-loan-after.png`, fullPage: true });
+  const nextProj = await tid(dsk, 'next-projection').innerText();
+  step('Timeline atualizada: ' + nextProj.replace(/\s+/g, ' ').slice(0, 80));
+  await browser.close();
+  if (errors.length) { console.log('ERROS:', errors); process.exit(1); }
+  console.log('\nFLUXO COMPLETO OK');
+})().catch((e) => { console.error('✗ ' + e.message); process.exit(1); });

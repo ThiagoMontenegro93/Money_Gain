@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "LendControl Pro",
+    "slug": "lendcontrol-pro",
+    "version": "6.5.0",
+    "scheme": "lendcontrol",
+    "orientation": "default",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0F172A",
+    "ios": { "supportsTablet": true, "bundleIdentifier": "app.lendcontrol.pro" },
+    "android": { "package": "app.lendcontrol.pro" },
+    "web": { "bundler": "metro", "output": "single", "name": "LendControl Pro" },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-web-browser",
+      ["expo-image-picker", { "photosPermission": "Permitir acesso às fotos para anexar comprovantes e documentos." }],
+      ["expo-local-authentication", { "faceIDPermission": "Confirmar aprovações com biometria." }]
+    ],
+    "experiments": { "typedRoutes": false }
+  }
+}
