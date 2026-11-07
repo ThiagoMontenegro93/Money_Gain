@@ -8,3 +8,4 @@ storage/
 backups/
 coverage/
 storage-test/
+.env.prod

@@ -1,0 +1,8 @@
+**/node_modules
+**/dist
+**/.expo
+**/storage
+**/storage-test
+apps/api/.env
+docs/screenshots
+.git

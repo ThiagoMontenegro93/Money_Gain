@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Injectable, Param, Post, Put, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Injectable, Logger, OnApplicationBootstrap, Param, Post, Put, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Role, User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -30,12 +30,26 @@ export function toUserDTO(u: User) {
 }
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnApplicationBootstrap {
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
     private audit: AuditService,
   ) {}
+
+  /** Primeiro acesso em produção: banco vazio + OWNER_EMAIL/OWNER_PASSWORD definidos -> cria o dono (Super Admin). */
+  async onApplicationBootstrap() {
+    const email = process.env.OWNER_EMAIL?.toLowerCase().trim();
+    const password = process.env.OWNER_PASSWORD;
+    if (!email || !password) return;
+    if (await this.prisma.user.count()) return;
+    if (password.length < 8) throw new Error('OWNER_PASSWORD deve ter ao menos 8 caracteres');
+    const u = await this.prisma.user.create({
+      data: { name: process.env.OWNER_NAME || 'Dono', email, role: 'SUPER_ADMIN', passwordHash: await bcrypt.hash(password, 10), revolving: false },
+    });
+    await this.audit.log(u.id, 'CREATE', 'User', u.id, { role: 'SUPER_ADMIN', bootstrap: true });
+    new Logger('Users').log(`Dono criado no primeiro acesso: ${email} (troque a senha em Configurações)`);
+  }
 
   async login(email: string, password: string) {
     const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });

@@ -1,0 +1,78 @@
+# Produção: docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+# Crie o .env.prod a partir de .env.prod.example (NUNCA use as chaves de desenvolvimento).
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lend
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+      POSTGRES_DB: lendcontrol
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lend -d lendcontrol"]
+      interval: 10s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+    environment:
+      DATABASE_URL: postgresql://lend:${POSTGRES_PASSWORD}@postgres:5432/lendcontrol?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?defina ENCRYPTION_KEY}
+      FILE_SIGNING_SECRET: ${FILE_SIGNING_SECRET:?defina FILE_SIGNING_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      OWNER_NAME: ${OWNER_NAME:-Dono}
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      OWNER_PASSWORD: ${OWNER_PASSWORD:-}
+      SMTP_URL: ${SMTP_URL:-}
+      SMTP_FROM: ${SMTP_FROM:-LendControl <backup@lendcontrol.app>}
+    volumes:
+      - appdata:/data
+    ports:
+      - "${APP_PORT:-3000}:3000"
+  # HTTPS automático (Let's Encrypt). Ative com --profile https e defina DOMAIN no .env.prod
+  caddy:
+    image: caddy:2.10-alpine
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on: [app]
+    command: ["caddy", "reverse-proxy", "--from", "${DOMAIN:-localhost}", "--to", "app:3000"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddydata:/data
+  # Cópia diária do banco (além do backup semanal em Excel), guarda 14 dias
+  pgbackup:
+    image: prodrigestivill/postgres-backup-local:16
+    restart: unless-stopped
+    depends_on: [postgres]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: lendcontrol
+      POSTGRES_USER: lend
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 14
+      BACKUP_KEEP_WEEKS: 8
+      BACKUP_KEEP_MONTHS: 6
+    volumes:
+      - dbbackups:/backups
+volumes:
+  pgdata:
+  redisdata:
+  appdata:
+  caddydata:
+  dbbackups:
