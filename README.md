@@ -23,7 +23,7 @@ Pré-requisitos: Node 20+, pnpm 10, Docker (ou PostgreSQL 16 local).
 
 ```bash
 pnpm install
-docker compose up -d                 # PostgreSQL em localhost:5432 (lend/lend)
+docker compose up -d                 # PostgreSQL em localhost:5432 (lend/lend) e Redis em 6379
 cp apps/api/.env.example apps/api/.env   # TROQUE JWT_SECRET, ENCRYPTION_KEY e FILE_SIGNING_SECRET em produção
 pnpm build:core
 cd apps/api && npx prisma migrate deploy && pnpm prisma:seed && cd ../..
@@ -44,8 +44,8 @@ O seed cria 6 clientes reais de teste cobrindo BOM, REGULAR, RUIM e PERDA.
 ## Testes
 
 ```bash
-pnpm --filter @lendcontrol/core test   # 33 testes do motor, score e importador
-pnpm --filter @lendcontrol/api test    # reaplica o seed e roda 27 testes ponta a ponta contra a API rodando
+pnpm --filter @lendcontrol/core test   # 38 testes do motor, score, importador e mensagens
+pnpm --filter @lendcontrol/api test    # reaplica o seed e roda 42 testes ponta a ponta contra a API rodando (inclui um mock da Evolution API na porta 3999)
 # Com a API servindo o build web em http://localhost:3000:
 pnpm --filter @lendcontrol/app test:responsive  # 13 telas × 4 larguras (1440, 1280, 768, 390) × 2 perfis: sem estouro horizontal, sem erro de console
 pnpm --filter @lendcontrol/app test:flow        # fluxo real: funcionário no celular importa WhatsApp → cadastra → empresta → lança recibo; dono aprova no desktop
@@ -77,11 +77,18 @@ Screenshots das telas e dos fluxos ficam em `docs/screenshots/`.
 
 Decisões em que interpretei a especificação estão em `docs/DECISOES.md`.
 
+## Fase 2 (entregue)
+
+- **WhatsApp automático**: varredura diária às 09:00 gera D-2, D0, D+1, D+3, D+7 (e aviso ao fiador) e "Pagamento OK"
+  na aprovação; fila BullMQ com 3 tentativas; janela 08–20h; blacklist e opt-out por cliente; templates editáveis;
+  Evolution API, Meta Cloud API ou só link wa.me.
+- **Documentos (aba 5)**: galeria com validade, verificado/pendente/vencido, marca d'água ao visualizar e log LGPD.
+- **Comprovantes enviados pelo cliente**: anexados e vinculados automaticamente ao pagamento pendente; conferência pelo admin.
+- **Cobrança**: mensagem firme e aviso ao fiador por wa.me, carta de cobrança e dossiê jurídico em PDF, negativação.
+- **Perfil**: chave PIX do credor usada nas mensagens; edição de usuários pelo dono.
+
 ## Roadmap
 
-- **Fase 2**: WhatsApp (Evolution API/Z-API + fallback wa.me, templates D-2/D0/D+1/D+3/D+7+fiador, BullMQ 09:00, janela 08-20h,
-  blacklist); galeria de documentos (verificado/pendente, validade, marca d'água, logs de visualização) e comprovantes enviados
-  pelo cliente vinculados ao pagamento; biometria na aprovação pelo celular; carta de cobrança em PDF e dossiê.
 - **Fase 3**: backup semanal em Excel (7 abas, fórmulas BANE, 500 linhas com 6 clientes reais), histórico dos 10 últimos,
   restauração validada com senha, envio por e-mail configurável, exportação criptografada.
 - **Fase 4**: offline-first no app (fila de sincronização), builds EAS (APK/IPA), deploy (Docker + Postgres gerenciado),

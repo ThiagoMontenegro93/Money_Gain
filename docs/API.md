@@ -1,4 +1,4 @@
-# LendControl Pro V6.5 — Contrato da API (Fase 1)
+# LendControl Pro V6.5 — Contrato da API (Fases 1 e 2)
 
 Base: `http://localhost:3000/api` · Autenticação: `Authorization: Bearer <accessToken>`.
 
@@ -175,6 +175,43 @@ interface TransferDTO {
   createdAt: string;
 }
 ```
+
+## Usuários (Fase 2)
+| PUT | /users/me | `{ phone?, pixKey?, currentPassword?, newPassword? }` — trocar senha exige a senha atual |
+| PUT | /users/:id | (SUPER_ADMIN) `{ name?, phone?, pixKey?, role?, isActive?, commissionPercent?, revolving? }` — não pode desativar nem rebaixar a si mesmo |
+
+A chave PIX do credor entra em `{pix_chave}` nas mensagens de cobrança.
+
+## WhatsApp (Fase 2)
+| GET | /messaging/config | (ADMIN+) configuração sem segredos: `hasApiKey`, `hasMetaToken`, `queue` (`BULLMQ` ou `MEMORIA`) |
+| PUT | /messaging/config | (SUPER_ADMIN) `{ enabled, provider: EVOLUTION\|META\|LINK, baseUrl, instance, apiKey, metaPhoneNumberId, metaToken, windowStart, windowEnd, sendTime, autoPaymentOk, notifyGuarantorD7, blacklist[] }` (parcial). Segredo vazio/omitido mantém o atual; `null` apaga |
+| GET | /messaging/templates | `{ key, label, text, isDefault, placeholders }[]` |
+| PUT | /messaging/templates/:key | (SUPER_ADMIN) `{ text }`; `text: null` restaura o padrão |
+| GET | /messaging/logs?clientId=&status=&limit= | histórico (operador vê só os próprios clientes) |
+| GET | /messaging/status | contagem por status e modo da fila |
+| POST | /messaging/scan | (SUPER_ADMIN) roda a varredura do dia agora (normalmente às 09:00) |
+| POST | /messaging/test | (SUPER_ADMIN) `{ phone, text }` envio direto |
+| POST | /messaging/:id/retry | (ADMIN+) reenvia mensagem com `FALHOU` |
+| POST | /clients/:id/collection-message | `{ target: CLIENTE\|FIADOR }` → log com `waLink` (cobrança firme manual) |
+
+Status: `PENDENTE`, `ENVIADO`, `FALHOU`, `LINK_GERADO` (canal manual wa.me), `BLOQUEADO` (blacklist/opt-out/telefone inválido), `CANCELADO` (parcela já paga).
+Gatilhos: D-2, D0, D+1, D+3, D+7 (+ fiador), Pagamento OK na aprovação. Chave de deduplicação por parcela + gatilho + dia.
+Fora da janela (padrão 08:00–20:00, America/Sao_Paulo) a mensagem é adiada para a próxima abertura. 3 tentativas com espera exponencial (60 s).
+
+## Documentos, comprovantes do cliente e cobrança (Fase 2)
+| GET/POST | /clients/:id/documents | POST `{ type, fileId, expiryDate?, notes? }` |
+| PATCH | /documents/:id | `{ isVerified?, expiryDate?, notes? }` (verificar: ADMIN+) |
+| DELETE | /documents/:id | (ADMIN+) |
+| GET | /documents/:id/url | URL assinada de 5 min; registra visualização (LGPD) |
+| GET | /documents/raw/:id?… | imagem com marca d'água (nome de quem viu + data) e selo VERIFICADO, em JPEG; PDF sem alteração |
+| GET/POST | /clients/:id/receipts | POST `{ fileId, sentAt, informedValueCents?, notes? }`; se houver exatamente 1 pagamento pendente, vincula automaticamente |
+| POST | /receipts/:id/check | (ADMIN+) `{ paymentId? }` marca como conferido |
+| GET | /clients/:id/collection-letter.pdf | carta de cobrança (registra tentativa CARTA) |
+| GET | /clients/:id/dossier.pdf | (ADMIN+) dossiê jurídico (registra tentativa JURIDICO) |
+| POST | /clients/:id/negativate | (ADMIN+) `{ mark }` |
+| PUT | /clients/:id/whatsapp-opt-out | `{ optOut }` |
+
+Status do documento: `VERIFICADO`, `PENDENTE`, `VENCIDO` (validade passou).
 
 ## Notificações
 | GET | /notifications | `{ id, title, message, readAt, createdAt }[]` |

@@ -1,4 +1,4 @@
-# Decisões e premissas (Fase 1)
+# Decisões e premissas (Fases 1 e 2)
 
 Pontos em que a especificação deixava margem e a escolha feita:
 
@@ -25,3 +25,15 @@ Pontos em que a especificação deixava margem e a escolha feita:
     (biometria não pode ser verificada pelo servidor).
 15. **Arquivos** ficam em disco privado (`STORAGE_DIR`) com URL assinada HMAC de 5 minutos e log de visualização;
     em produção, trocar por S3/R2 com URL pré-assinada.
+
+## Fase 2
+16. **Fila**: BullMQ sobre Redis (`REDIS_URL`). Sem Redis, a API processa as mensagens em memória (bom para desenvolvimento,
+    sem persistência de fila). O registro de cada mensagem fica sempre no PostgreSQL (`MessageLog`).
+17. **Provedor**: Evolution API v2 (`/message/sendText/{instância}`, header `apikey`) ou Meta Cloud API. O modo `LINK`
+    não envia nada: gera o link wa.me para o funcionário enviar pelo próprio WhatsApp. Z-API pode entrar como provedor novo no mesmo ponto.
+18. **Chaves do provedor** ficam criptografadas (AES-256-GCM) no banco e nunca voltam nas respostas.
+19. **Mensagem firme e aviso ao fiador** são manuais (botão gera o wa.me e registra a tentativa de cobrança); as automáticas
+    respeitam blacklist e o opt-out do cliente.
+20. **Marca d'água** é aplicada na hora de ver (o original fica intacto), com o nome de quem visualizou e a data;
+    cada visualização é registrada.
+21. **Biometria** segue a decisão 14: o app pede biometria quando disponível e o servidor sempre confere a senha.

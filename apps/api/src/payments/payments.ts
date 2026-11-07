@@ -12,7 +12,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { expectedAmount, isValidISODate, planPayment, diffDays } from '@lendcontrol/core';
+import { expectedAmount, formatBRL, isValidISODate, planPayment, diffDays } from '@lendcontrol/core';
 import { PaymentStatus, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { AuditService } from '../common/audit.service';
@@ -97,7 +97,7 @@ export class PaymentsService {
         throw e;
       });
     await this.audit.log(u.id, 'CREATE', 'Payment', p.id, { type: b.type, amountCents: b.amountCents });
-    await this.audit.notifyAdmins('Recibo aguardando aprovação', `${u.name} lançou ${b.type} de R$ ${(b.amountCents / 100).toFixed(2)} - ${loan.client.fullName}`, { paymentId: p.id });
+    await this.audit.notifyAdmins('Recibo aguardando aprovação', `${u.name} lançou ${b.type} de ${formatBRL(b.amountCents)} - ${loan.client.fullName}`, { paymentId: p.id });
     return paymentDTO(p);
   }
 
