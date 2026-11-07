@@ -22,6 +22,7 @@ import { d, dt, iso, num, today, ZodPipe } from '../common/util';
 import { ScoreService } from '../clients/score.service';
 import { loanInclude, paymentDTO, paymentInclude, toEngineInstallment, toEngineLoan } from '../loans/loan-mapper';
 import { UsersService } from '../users/users';
+import { MessagingService } from '../messaging/messaging.service';
 
 const createSchema = z.object({
   loanId: z.string(),
@@ -41,6 +42,7 @@ export class PaymentsService {
     private users: UsersService,
     private score: ScoreService,
     private audit: AuditService,
+    private messaging: MessagingService,
   ) {}
 
   private async loadLoan(u: AuthUser, loanId: string) {
@@ -251,7 +253,8 @@ export class PaymentsService {
     );
     await this.score.recompute(result.clientId);
     this.logger.log(`Pagamento ${id} aprovado por ${u.name}: ${result.updated.resultMessage}`);
-    // TODO Fase 2: enfileirar confirmação WhatsApp (template "Payment OK") via BullMQ
+    // Confirmação "Pagamento OK" via WhatsApp (não bloqueia a aprovação)
+    await this.messaging.paymentOk(id).catch((e) => this.logger.warn(`Falha ao enfileirar Payment OK: ${(e as Error).message}`));
     return paymentDTO(result.updated);
   }
 

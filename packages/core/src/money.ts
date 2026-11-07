@@ -21,7 +21,7 @@ export function pct(base: Cents, percent: number): Cents {
 }
 
 export function formatBRL(c: Cents): string {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(fromCents(c));
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(fromCents(c)).replace(/\u00a0/g, ' ');
 }
 
 /** "R$ 1.234,56" / "1234,56" / "1234.56" -> centavos. */

@@ -26,6 +26,8 @@ model User {
   name               String
   email              String   @unique
   phone              String?
+  /// Chave PIX do credor usada nas mensagens ({pix_chave})
+  pixKey             String?
   passwordHash       String
   role               Role     @default(OPERATOR)
   isActive           Boolean  @default(true)
@@ -56,6 +58,7 @@ model User {
   files              StoredFile[]
   collectionAttempts CollectionAttempt[]
   clientHistory      ClientHistory[]
+  messages           MessageLog[]
   documentViews      DocumentViewLog[]
 }
 
@@ -159,6 +162,11 @@ model Client {
   unblockedAt      DateTime?
   unblockedById    String?
 
+  // WhatsApp / cobrança
+  whatsappOptOut   Boolean     @default(false)
+  negativadoEm     DateTime?
+  negativadoPorId  String?
+
   // LGPD
   lgpdConsentAt    DateTime?
   lgpdConsentVersion String?
@@ -172,6 +180,7 @@ model Client {
   receipts           ClientReceipt[]
   collectionAttempts CollectionAttempt[]
   history            ClientHistory[]
+  messages           MessageLog[]
 
   @@index([classificacao])
   @@index([responsibleUserId])
@@ -463,6 +472,7 @@ model Document {
   fileId     String
   /// URL privada; acesso apenas por URL assinada de 5 minutos
   fileUrl    String
+  notes      String?
   isVerified Boolean      @default(false)
   verifiedById String?
   verifiedAt DateTime?
@@ -498,6 +508,10 @@ model ClientReceipt {
   sentAt      DateTime
   informedValue Decimal?    @db.Decimal(14, 2)
   status      ReceiptStatus @default(PENDENTE_CONFERENCIA)
+  notes       String?
+  createdById String?
+  checkedById String?
+  checkedAt   DateTime?
   paymentId   String?
   payment     Payment?      @relation(fields: [paymentId], references: [id])
   createdAt   DateTime      @default(now())
@@ -565,4 +579,46 @@ model Setting {
   key       String   @id
   value     Json
   updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp (seção 4): fila de mensagens com idempotência e auditoria
+// ---------------------------------------------------------------------------
+
+enum MessageStatus {
+  PENDENTE // na fila
+  ENVIADO
+  FALHOU // falhou após retentativas -> gera link wa.me
+  LINK_GERADO // canal manual (sem provedor) - abrir link wa.me
+  BLOQUEADO // blacklist / opt-out
+  CANCELADO // parcela paga antes do envio
+}
+
+model MessageLog {
+  id            String        @id @default(cuid())
+  clientId      String?
+  client        Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  loanId        String?
+  installmentId String?
+  paymentId     String?
+  template      String
+  toPhone       String
+  toName        String?
+  body          String
+  channel       String // EVOLUTION | META | LINK
+  status        MessageStatus @default(PENDENTE)
+  attempts      Int           @default(0)
+  lastError     String?
+  providerId    String?
+  waLink        String?
+  /// Chave de idempotência: evita duplicar o mesmo aviso no mesmo dia
+  dedupeKey     String?       @unique
+  scheduledFor  DateTime      @default(now())
+  sentAt        DateTime?
+  createdById   String?
+  createdBy     User?         @relation(fields: [createdById], references: [id])
+  createdAt     DateTime      @default(now())
+
+  @@index([status, scheduledFor])
+  @@index([clientId, createdAt])
 }

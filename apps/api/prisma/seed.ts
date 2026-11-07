@@ -39,13 +39,13 @@ async function main() {
 
   console.log('Limpando dados...');
   await prisma.$executeRawUnsafe(
-    `TRUNCATE "CashLedger","ClientReceipt","Payment","Installment","Loan","CapitalTransfer","DocumentViewLog","Document","CollectionAttempt","ClientHistory","Client","StoredFile","AuditLog","Notification","BackupLog","Setting","User" RESTART IDENTITY CASCADE`,
+    `TRUNCATE "MessageLog","CashLedger","ClientReceipt","Payment","Installment","Loan","CapitalTransfer","DocumentViewLog","Document","CollectionAttempt","ClientHistory","Client","StoredFile","AuditLog","Notification","BackupLog","Setting","User" RESTART IDENTITY CASCADE`,
   );
 
   const hash = await bcrypt.hash(PASSWORD, 10);
-  const thiago = await prisma.user.create({ data: { name: 'Thiago', email: 'thiago@lendcontrol.app', role: 'SUPER_ADMIN', passwordHash: hash, phone: '(21) 99999-0001' } });
+  const thiago = await prisma.user.create({ data: { name: 'Thiago', email: 'thiago@lendcontrol.app', role: 'SUPER_ADMIN', passwordHash: hash, phone: '(21) 99999-0001', pixKey: 'thiago.pix@lendcontrol.app' } });
   const gestor = await prisma.user.create({ data: { name: 'Gestor', email: 'gestor@lendcontrol.app', role: 'ADMIN', passwordHash: hash } });
-  const carlos = await prisma.user.create({ data: { name: 'Carlos', email: 'carlos@lendcontrol.app', role: 'OPERATOR', passwordHash: hash, commissionPercent: 30, phone: '(21) 99999-0003' } });
+  const carlos = await prisma.user.create({ data: { name: 'Carlos', email: 'carlos@lendcontrol.app', role: 'OPERATOR', passwordHash: hash, commissionPercent: 30, phone: '(21) 99999-0003', pixKey: '21999990003' } });
   const T = { id: thiago.id, role: thiago.role, name: thiago.name };
   const C = { id: carlos.id, role: carlos.role, name: carlos.name };
   void gestor;

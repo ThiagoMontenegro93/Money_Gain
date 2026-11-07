@@ -25,11 +25,14 @@
     "@nestjs/throttler": "6.4.0",
     "@prisma/client": "6.19.3",
     "bcryptjs": "3.0.2",
+    "bullmq": "5.60.0",
     "express": "5.1.0",
     "helmet": "8.1.0",
     "multer": "2.0.2",
+    "pdfkit": "0.17.2",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
+    "sharp": "0.34.5",
     "zod": "3.25.76"
   },
   "devDependencies": {
@@ -37,6 +40,7 @@
     "@types/express": "5.0.3",
     "@types/multer": "2.0.0",
     "@types/node": "22.18.0",
+    "@types/pdfkit": "0.17.3",
     "prisma": "6.19.3",
     "ts-node": "10.9.2",
     "typescript": "5.9.3",

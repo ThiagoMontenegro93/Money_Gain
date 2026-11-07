@@ -351,6 +351,8 @@ export class ClientsService {
       form,
       progress: formProgress(form),
       whatsappImportedAt: cl.whatsappImportedAt?.toISOString() ?? null,
+      whatsappOptOut: cl.whatsappOptOut,
+      negativadoEm: cl.negativadoEm?.toISOString() ?? null,
       lgpdConsentAt: cl.lgpdConsentAt?.toISOString() ?? null,
       scoreDetail,
       creditLock,

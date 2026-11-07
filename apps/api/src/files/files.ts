@@ -65,11 +65,13 @@ export class FilesService {
   async canAccess(u: AuthUser, fileId: string, uploadedById: string) {
     if (isAdmin(u) || uploadedById === u.id) return true;
     const clientScope = { deletedAt: null, OR: [{ responsibleUserId: u.id }, { loans: { some: { lenderUserId: u.id } } }] };
-    const [cl, pay] = await Promise.all([
+    const [cl, pay, doc, rec] = await Promise.all([
       this.prisma.client.count({ where: { ...clientScope, AND: [{ OR: [{ selfieFileId: fileId }, { guarantorDocFileId: fileId }] }] } }),
       this.prisma.payment.count({ where: { comprovanteFileId: fileId, loan: { lenderUserId: u.id } } }),
+      this.prisma.document.count({ where: { fileId, client: clientScope } }),
+      this.prisma.clientReceipt.count({ where: { fileId, client: clientScope } }),
     ]);
-    return cl + pay > 0;
+    return cl + pay + doc + rec > 0;
   }
 
   async signedUrl(u: AuthUser, id: string, baseUrl: string) {

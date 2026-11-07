@@ -18,6 +18,10 @@ import { LoansController, LoansService } from './loans/loans';
 import { PaymentsController, PaymentsService } from './payments/payments';
 import { UsersController, UsersService } from './users/users';
 import { WalletsController, WalletsService } from './wallets/wallets';
+import { SettingsService } from './common/settings.service';
+import { MessagingController } from './messaging/messaging.controller';
+import { MessagingService } from './messaging/messaging.service';
+import { DocumentsController, DocumentsService } from './documents/documents';
 
 const jwtSecret = process.env.JWT_SECRET ?? '';
 if (jwtSecret.length < 32) throw new Error('JWT_SECRET deve ter ao menos 32 caracteres');
@@ -37,6 +41,8 @@ if (jwtSecret.length < 32) throw new Error('JWT_SECRET deve ter ao menos 32 cara
     FilesController,
     DashboardController,
     JobsController,
+    MessagingController,
+    DocumentsController,
   ],
   providers: [
     PrismaService,
@@ -51,6 +57,9 @@ if (jwtSecret.length < 32) throw new Error('JWT_SECRET deve ter ao menos 32 cara
     FilesService,
     DashboardService,
     JobsService,
+    SettingsService,
+    MessagingService,
+    DocumentsService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

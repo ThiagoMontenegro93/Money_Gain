@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Injectable, Post, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Injectable, Param, Post, Put, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Role, User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -14,6 +14,7 @@ export function toUserDTO(u: User) {
     name: u.name,
     email: u.email,
     phone: u.phone,
+    pixKey: u.pixKey,
     role: u.role,
     isActive: u.isActive,
     commissionPercent: num(u.commissionPercent),
@@ -71,6 +72,22 @@ const createUserSchema = z.object({
   revolving: z.boolean().optional(),
 });
 
+const selfSchema = z.object({
+  phone: z.string().max(30).nullable().optional(),
+  pixKey: z.string().max(120).nullable().optional(),
+  currentPassword: z.string().optional(),
+  newPassword: z.string().min(8, 'Nova senha deve ter ao menos 8 caracteres').optional(),
+});
+const updateUserSchema = z.object({
+  name: z.string().min(2).optional(),
+  phone: z.string().max(30).nullable().optional(),
+  pixKey: z.string().max(120).nullable().optional(),
+  role: z.nativeEnum(Role).optional(),
+  isActive: z.boolean().optional(),
+  commissionPercent: z.number().min(0).max(100).optional(),
+  revolving: z.boolean().optional(),
+});
+
 @Controller()
 export class UsersController {
   constructor(
@@ -94,6 +111,27 @@ export class UsersController {
   async list(@CurrentUser() u: AuthUser) {
     const where = isAdmin(u) ? {} : { id: u.id };
     return (await this.prisma.user.findMany({ where, orderBy: [{ role: 'asc' }, { name: 'asc' }] })).map(toUserDTO);
+  }
+
+  @Put('users/me')
+  async updateMe(@CurrentUser() u: AuthUser, @Body(new ZodPipe(selfSchema)) b: z.infer<typeof selfSchema>) {
+    const data: Record<string, unknown> = { ...(b.phone !== undefined ? { phone: b.phone } : {}), ...(b.pixKey !== undefined ? { pixKey: b.pixKey } : {}) };
+    if (b.newPassword) {
+      await this.users.verifyPassword(u.id, b.currentPassword);
+      data.passwordHash = await bcrypt.hash(b.newPassword, 10);
+    }
+    const user = await this.prisma.user.update({ where: { id: u.id }, data });
+    await this.audit.log(u.id, 'UPDATE_SELF', 'User', u.id, { fields: Object.keys(data).filter((k) => k !== 'passwordHash') });
+    return toUserDTO(user);
+  }
+
+  @Roles('SUPER_ADMIN')
+  @Put('users/:id')
+  async update(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(updateUserSchema)) b: z.infer<typeof updateUserSchema>) {
+    if (id === u.id && (b.isActive === false || (b.role && b.role !== 'SUPER_ADMIN'))) throw new UnauthorizedException('Você não pode desativar ou rebaixar a si mesmo');
+    const user = await this.prisma.user.update({ where: { id }, data: b });
+    await this.audit.log(u.id, 'UPDATE', 'User', id, b);
+    return toUserDTO(user);
   }
 
   @Roles('SUPER_ADMIN')
