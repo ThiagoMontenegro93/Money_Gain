@@ -1,0 +1,568 @@
+// LendControl Pro V6.5 - Schema Prisma (PostgreSQL)
+// Valores monetários: Decimal(14,2). Taxas: Decimal(9,4) em % (10 = 10%).
+// Datas de vencimento: @db.Date (dia, sem hora) no fuso America/Sao_Paulo.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Usuários, carteira do funcionário
+// ---------------------------------------------------------------------------
+
+enum Role {
+  SUPER_ADMIN // Dono (Thiago): repassa capital, aprova, desbloqueia, restaura backup
+  ADMIN // Gestor: aprova pagamentos e repasses
+  OPERATOR // Funcionário: empresta, cobra, lança recibos, repassa ao dono
+}
+
+model User {
+  id                 String   @id @default(cuid())
+  name               String
+  email              String   @unique
+  phone              String?
+  passwordHash       String
+  role               Role     @default(OPERATOR)
+  isActive           Boolean  @default(true)
+  /// % de comissão do funcionário sobre juros + multa recebidos (ex.: 30)
+  commissionPercent  Decimal  @default(30) @db.Decimal(5, 2)
+  /// Modo revolving: principal devolvido volta para o funcionário re-emprestar
+  revolving          Boolean  @default(true)
+  // Carteira (employee_wallets) - mantida em colunas para leitura rápida; o razão é CashLedger
+  capitalDisponivel  Decimal  @default(0) @db.Decimal(14, 2)
+  capitalEmprestado  Decimal  @default(0) @db.Decimal(14, 2)
+  comissaoAPagar     Decimal  @default(0) @db.Decimal(14, 2)
+  /// Recebido de clientes que ainda deve ser repassado ao dono
+  paraRepassar       Decimal  @default(0) @db.Decimal(14, 2)
+  recebidoClientes   Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  clientsResponsible Client[]          @relation("ClientResponsible")
+  loansFunded        Loan[]            @relation("LoanFunder")
+  loansLent          Loan[]            @relation("LoanLender")
+  paymentsCreated    Payment[]         @relation("PaymentCreatedBy")
+  paymentsApproved   Payment[]         @relation("PaymentApprovedBy")
+  transfersFrom      CapitalTransfer[] @relation("TransferFrom")
+  transfersTo        CapitalTransfer[] @relation("TransferTo")
+  transfersApproved  CapitalTransfer[] @relation("TransferApprovedBy")
+  ledger             CashLedger[]
+  auditLogs          AuditLog[]
+  files              StoredFile[]
+  collectionAttempts CollectionAttempt[]
+  clientHistory      ClientHistory[]
+  documentViews      DocumentViewLog[]
+}
+
+// ---------------------------------------------------------------------------
+// Cliente - ficha completa (5 abas)
+// ---------------------------------------------------------------------------
+
+enum ClientScore {
+  BOM
+  REGULAR
+  RUIM
+  PERDA
+}
+
+enum ClientStatus {
+  RASCUNHO
+  ATIVO
+  INATIVO
+}
+
+enum ClientSource {
+  MANUAL
+  WHATSAPP
+}
+
+model Client {
+  id                 String       @id @default(cuid())
+  status             ClientStatus @default(ATIVO)
+  source             ClientSource @default(MANUAL)
+  whatsappImportedAt DateTime?
+  responsibleUserId  String?
+  responsible        User?        @relation("ClientResponsible", fields: [responsibleUserId], references: [id])
+
+  // Aba 1 - Dados pessoais
+  fullName     String
+  /// CPF criptografado (AES-256-GCM) + hash HMAC para unicidade/busca + últimos dígitos para exibição
+  cpfEncrypted String?
+  cpfHash      String?  @unique
+  cpfLast      String?
+  rg           String?
+  rgIssuer     String?
+  birthDate    DateTime? @db.Date
+  selfieFileId String?
+  notes        String?
+
+  // Aba 2 - Contato e endereço
+  whatsapp      String?
+  whatsapp2     String?
+  cep           String?
+  street        String?
+  number        String?
+  complement    String?
+  district      String?
+  city          String?
+  state         String?   @db.Char(2)
+  reference     String?
+  residenceTime String?
+
+  // Aba 3 - Financeiro
+  pixKey          String?
+  pixType         String?
+  profession      String?
+  income          Decimal? @db.Decimal(14, 2)
+  workplace       String?
+  internalScore   Int?
+  creditLimit     Decimal? @db.Decimal(14, 2)
+
+  // Aba 4 - Vínculos
+  emergencyName      String?
+  emergencyRelation  String?
+  emergencyPhone1    String?
+  emergencyPhone2    String?
+  hasGuarantor       Boolean @default(false)
+  guarantorName      String?
+  guarantorCpfEncrypted String?
+  guarantorCpfLast   String?
+  guarantorPhone     String?
+  guarantorRelation  String?
+  guarantorClientId  String?
+  guarantorClient    Client?  @relation("ClientGuarantor", fields: [guarantorClientId], references: [id])
+  guaranteedClients  Client[] @relation("ClientGuarantor")
+  guarantorDocFileId String?
+  referrerName       String?
+  referrerPhone      String?
+  referrerClientId   String?
+  referrerClient     Client?  @relation("ClientReferrer", fields: [referrerClientId], references: [id])
+  referredClients    Client[] @relation("ClientReferrer")
+
+  // Score automático (seção 7)
+  score            Int         @default(5)
+  classificacao    ClientScore @default(REGULAR)
+  /// 0..1
+  pontualidade     Decimal?    @db.Decimal(5, 4)
+  diasSemPagar     Int         @default(0)
+  lastPaymentAt    DateTime?   @db.Date
+  scoreUpdatedAt   DateTime?
+  /// Restringir novos empréstimos (marcado automaticamente para PERDA)
+  isBlocked        Boolean     @default(false)
+  blockedReason    String?
+  /// Desbloqueio manual pelo Super Admin (evita rebloqueio automático até nova perda)
+  unblockedAt      DateTime?
+  unblockedById    String?
+
+  // LGPD
+  lgpdConsentAt    DateTime?
+  lgpdConsentVersion String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  loans              Loan[]
+  documents          Document[]
+  receipts           ClientReceipt[]
+  collectionAttempts CollectionAttempt[]
+  history            ClientHistory[]
+
+  @@index([classificacao])
+  @@index([responsibleUserId])
+  @@index([fullName])
+}
+
+/// Histórico de eventos do cliente (desconto fidelidade, desbloqueio, mudanças de score...)
+model ClientHistory {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  type      String // DESCONTO_FIDELIDADE, AUMENTO_LIMITE, DESBLOQUEIO, VIROU_PERDA, SCORE
+  message   String
+  data      Json?
+  createdAt DateTime @default(now())
+
+  @@index([clientId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Empréstimos e parcelas
+// ---------------------------------------------------------------------------
+
+enum LoanMethod {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+enum LoanType {
+  INTEREST_ONLY
+  FIXED_INSTALLMENT
+}
+
+enum LoanStatus {
+  ATIVO
+  QUITADO
+  PERDA
+  CANCELADO
+}
+
+model Loan {
+  id              String     @id @default(cuid())
+  code            Int        @unique @default(autoincrement())
+  clientId        String
+  client          Client     @relation(fields: [clientId], references: [id])
+  /// Quem fornece o capital (normalmente o dono)
+  funderUserId    String
+  funder          User       @relation("LoanFunder", fields: [funderUserId], references: [id])
+  /// Quem emprestou e cobra o cliente (funcionário ou o próprio dono)
+  lenderUserId    String
+  lender          User       @relation("LoanLender", fields: [lenderUserId], references: [id])
+  principal       Decimal    @db.Decimal(14, 2)
+  interestRate    Decimal    @db.Decimal(9, 4)
+  multaDiaPercent Decimal    @default(0) @db.Decimal(9, 4)
+  method          LoanMethod
+  type            LoanType
+  installmentsCount Int?
+  releaseDate     DateTime   @db.Date
+  /// Vencimento da quitação prevista / última parcela
+  dueDate         DateTime   @db.Date
+  status          LoanStatus @default(ATIVO)
+  saldoDevedor    Decimal    @db.Decimal(14, 2)
+  /// Empréstimo gerado por projeção/renegociação de outro
+  isProjection    Boolean    @default(false)
+  parentLoanId    String?
+  parentLoan      Loan?      @relation("LoanParent", fields: [parentLoanId], references: [id])
+  childLoans      Loan[]     @relation("LoanParent")
+  riskAcknowledged Boolean   @default(false)
+  notes           String?
+  quitadoEm       DateTime?  @db.Date
+  /// Controle de concorrência otimista
+  version         Int        @default(0)
+  createdById     String
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  installments Installment[]
+  payments     Payment[]
+  ledger       CashLedger[]
+
+  @@index([clientId, status])
+  @@index([lenderUserId, status])
+}
+
+enum InstallmentStatus {
+  PENDENTE
+  PAGA
+  CANCELADA
+}
+
+enum InstallmentType {
+  QUITACAO_PREVISTA
+  PROJECAO_JUROS
+  PARCELA_FIXA
+}
+
+model Installment {
+  id              String            @id @default(cuid())
+  loanId          String
+  loan            Loan              @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  number          Int
+  dueDate         DateTime          @db.Date
+  principalValue  Decimal           @db.Decimal(14, 2)
+  interestValue   Decimal           @db.Decimal(14, 2)
+  originalValue   Decimal           @db.Decimal(14, 2)
+  /// Atualizado pelo cron 00:00: original * (1 + multa% * dias)
+  updatedValue    Decimal           @db.Decimal(14, 2)
+  multaDiaPercent Decimal           @db.Decimal(9, 4)
+  diasAtraso      Int               @default(0)
+  status          InstallmentStatus @default(PENDENTE)
+  type            InstallmentType
+  isProjection    Boolean           @default(false)
+  paidValue       Decimal?          @db.Decimal(14, 2)
+  paidAt          DateTime?         @db.Date
+  paidKind        PaymentType?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  payments Payment[]
+
+  @@unique([loanId, number])
+  @@index([status, dueDate])
+}
+
+// ---------------------------------------------------------------------------
+// Pagamentos com trava de aprovação (V4)
+// ---------------------------------------------------------------------------
+
+enum PaymentType {
+  JUROS
+  QUITACAO
+  AMORTIZACAO
+  PARCELA
+}
+
+enum PaymentStatus {
+  AGUARDANDO_APROVACAO
+  APROVADO
+  REJEITADO
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  loanId         String
+  loan           Loan          @relation(fields: [loanId], references: [id])
+  installmentId  String?
+  installment    Installment?  @relation(fields: [installmentId], references: [id])
+  type           PaymentType
+  status         PaymentStatus @default(AGUARDANDO_APROVACAO)
+  value          Decimal       @db.Decimal(14, 2)
+  /// Valor esperado calculado no lançamento (para conferência do aprovador)
+  expectedValue  Decimal?      @db.Decimal(14, 2)
+  /// Data em que o cliente pagou (base da multa)
+  paidAt         DateTime      @db.Date
+  comprovanteUrl String?
+  comprovanteFileId String?
+  notes          String?
+  createdById    String
+  createdBy      User          @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+  approvedById   String?
+  approvedBy     User?         @relation("PaymentApprovedBy", fields: [approvedById], references: [id])
+  approvedAt     DateTime?
+  rejectionReason String?
+  // Alocação calculada na aprovação
+  principalPart  Decimal?      @db.Decimal(14, 2)
+  interestPart   Decimal?      @db.Decimal(14, 2)
+  finePart       Decimal?      @db.Decimal(14, 2)
+  extraPart      Decimal?      @db.Decimal(14, 2)
+  commissionPart Decimal?      @db.Decimal(14, 2)
+  resultMessage  String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  receipts ClientReceipt[]
+  ledger   CashLedger[]
+
+  @@index([status, createdAt])
+  @@index([loanId])
+}
+
+// ---------------------------------------------------------------------------
+// Repasses de capital / lucro e razão de caixa
+// ---------------------------------------------------------------------------
+
+enum TransferType {
+  REPASSE_CAPITAL // Dono -> funcionário (capital para emprestar)
+  REPASSE_LUCRO // Funcionário -> dono (juros recebidos menos comissão)
+  DEVOLUCAO_CAPITAL // Funcionário -> dono (capital devolvido)
+  PAGAMENTO_COMISSAO // Dono -> funcionário (quitação da comissão)
+}
+
+enum TransferStatus {
+  AGUARDANDO_APROVACAO
+  APROVADO
+  REJEITADO
+}
+
+model CapitalTransfer {
+  id           String         @id @default(cuid())
+  fromUserId   String
+  from         User           @relation("TransferFrom", fields: [fromUserId], references: [id])
+  toUserId     String
+  to           User           @relation("TransferTo", fields: [toUserId], references: [id])
+  value        Decimal        @db.Decimal(14, 2)
+  type         TransferType
+  status       TransferStatus @default(AGUARDANDO_APROVACAO)
+  notes        String?
+  comprovanteFileId String?
+  approvedById String?
+  approvedBy   User?          @relation("TransferApprovedBy", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
+  rejectionReason String?
+  createdAt    DateTime       @default(now())
+
+  ledger CashLedger[]
+
+  @@index([status])
+}
+
+enum LedgerType {
+  APORTE_CAPITAL
+  SAIDA_EMPRESTIMO
+  ENTRADA_PRINCIPAL
+  ENTRADA_JUROS
+  ENTRADA_MULTA
+  COMISSAO
+  REPASSE_CAPITAL
+  REPASSE_LUCRO
+  DEVOLUCAO_CAPITAL
+  PAGAMENTO_COMISSAO
+  AJUSTE
+}
+
+/// Razão de caixa imutável (append-only). amount > 0 entrada, < 0 saída na carteira do usuário.
+model CashLedger {
+  id         String     @id @default(cuid())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id])
+  type       LedgerType
+  amount     Decimal    @db.Decimal(14, 2)
+  description String
+  loanId     String?
+  loan       Loan?      @relation(fields: [loanId], references: [id])
+  paymentId  String?
+  payment    Payment?   @relation(fields: [paymentId], references: [id])
+  transferId String?
+  transfer   CapitalTransfer? @relation(fields: [transferId], references: [id])
+  createdAt  DateTime   @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Documentos, comprovantes e arquivos privados (LGPD)
+// ---------------------------------------------------------------------------
+
+model StoredFile {
+  id           String   @id @default(cuid())
+  storageKey   String   @unique
+  originalName String
+  mimeType     String
+  size         Int
+  sha256       String
+  uploadedById String
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id])
+  createdAt    DateTime @default(now())
+}
+
+enum DocumentType {
+  RG
+  CPF
+  COMPROVANTE_RESIDENCIA
+  COMPROVANTE_RENDA
+  SELFIE
+  CONTRATO
+  FIADOR_FOTO
+  COMPROVANTE_PAGAMENTO_CLIENTE
+}
+
+model Document {
+  id         String       @id @default(cuid())
+  clientId   String
+  client     Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  type       DocumentType
+  fileId     String
+  /// URL privada; acesso apenas por URL assinada de 5 minutos
+  fileUrl    String
+  isVerified Boolean      @default(false)
+  verifiedById String?
+  verifiedAt DateTime?
+  expiryDate DateTime?    @db.Date
+  createdAt  DateTime     @default(now())
+
+  viewLogs DocumentViewLog[]
+
+  @@index([clientId, type])
+}
+
+model DocumentViewLog {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  ip         String?
+  createdAt  DateTime @default(now())
+}
+
+enum ReceiptStatus {
+  PENDENTE_CONFERENCIA
+  CONFERIDO
+}
+
+/// Comprovantes enviados pelo cliente (galeria 2)
+model ClientReceipt {
+  id          String        @id @default(cuid())
+  clientId    String
+  client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  fileId      String
+  sentAt      DateTime
+  informedValue Decimal?    @db.Decimal(14, 2)
+  status      ReceiptStatus @default(PENDENTE_CONFERENCIA)
+  paymentId   String?
+  payment     Payment?      @relation(fields: [paymentId], references: [id])
+  createdAt   DateTime      @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Cobrança, backups, auditoria, configurações
+// ---------------------------------------------------------------------------
+
+model CollectionAttempt {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  date      DateTime @default(now())
+  type      String // LIGACAO_EMERGENCIA, WHATSAPP_FIADOR, VISITA, CARTA, NEGATIVACAO, ACORDO, JURIDICO, OUTRO
+  result    String
+  createdAt DateTime @default(now())
+}
+
+model BackupLog {
+  id               String   @id @default(cuid())
+  fileName         String
+  fileUrl          String
+  sizeBytes        Int
+  totalClientes    Int
+  totalEmprestimos Int
+  totalParcelas    Int      @default(0)
+  isAutomatic      Boolean  @default(false)
+  isRestore        Boolean  @default(false)
+  emailSentTo      String?
+  createdById      String?
+  createdAt        DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  entity    String
+  entityId  String?
+  data      Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?
+  /// null = todos os SUPER_ADMIN
+  role      Role?
+  title     String
+  message   String
+  readAt    DateTime?
+  data      Json?
+  createdAt DateTime @default(now())
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}

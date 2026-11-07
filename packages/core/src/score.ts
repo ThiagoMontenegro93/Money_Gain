@@ -85,14 +85,18 @@ export function computeScore(input: ScoreInput): ScoreResult {
   }
   score = Math.max(0, Math.min(10, Math.round(score)));
   const evaluated = onTime + l7 + l30 + lMax;
+  // Teto pela taxa de pontualidade: BOM exige constância (ex.: 75% em dia => no máximo 7)
+  if (evaluated > 0) score = Math.min(score, Math.floor((onTime / evaluated) * 10 + 1e-9));
   const ref = input.lastPaymentAt ?? input.firstReleaseAt ?? null;
   const diasSemPagar = ref ? Math.max(0, diffDays(input.today, ref)) : 0;
   // checkPerda(): >180 dias sem pagar E parcelas vencidas em aberto => score 0
   const isPerda = overdueOpen > 0 && diasSemPagar > PERDA_DAYS;
   if (isPerda) score = 0;
+  // PERDA é reservada ao checkPerda (> 180 dias sem pagar). Score 0-1 sem 6 meses fica RUIM.
+  const classificacao: ClientScoreClass = isPerda ? 'PERDA' : score >= 2 ? classify(score) : 'RUIM';
   return {
     score,
-    classificacao: classify(score),
+    classificacao,
     pontualidade: evaluated ? onTime / evaluated : null,
     diasSemPagar,
     isPerda,

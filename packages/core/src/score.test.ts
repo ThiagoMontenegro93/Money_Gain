@@ -29,7 +29,8 @@ describe('score', () => {
       ],
     });
     expect(r.score).toBe(0);
-    expect(r.classificacao).toBe('PERDA');
+    // sem 6 meses sem pagar não é PERDA: fica RUIM
+    expect(r.classificacao).toBe('RUIM');
     expect(r.pontualidade).toBe(0);
   });
 
@@ -44,6 +45,14 @@ describe('score', () => {
     });
     expect(r.diasSemPagar).toBe(191);
     expect(r).toMatchObject({ isPerda: true, score: 0, classificacao: 'PERDA', openDebtCents: 250_000 });
+  });
+});
+
+describe('teto por pontualidade', () => {
+  it('2 atrasos pequenos em 8 parcelas => REGULAR (7)', () => {
+    const inst = Array.from({ length: 8 }, (_, k) => ({ dueDate: `2026-0${1 + (k % 8)}-10`, status: 'PAGA' as const, paidAt: k < 2 ? `2026-0${1 + k}-12` : `2026-0${1 + k}-10` }));
+    const r = computeScore({ today: '2026-10-01', installments: inst });
+    expect(r).toMatchObject({ score: 7, classificacao: 'REGULAR', pontualidade: 0.75 });
   });
 });
 

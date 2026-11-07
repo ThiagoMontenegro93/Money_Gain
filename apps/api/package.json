@@ -1,0 +1,45 @@
+{
+  "name": "@lendcontrol/api",
+  "version": "6.5.0",
+  "private": true,
+  "scripts": {
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "start:dev": "nest start --watch",
+    "test": "vitest run",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:seed": "ts-node prisma/seed.ts"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
+  },
+  "dependencies": {
+    "@lendcontrol/core": "workspace:*",
+    "@nestjs/common": "11.1.6",
+    "@nestjs/core": "11.1.6",
+    "@nestjs/jwt": "11.0.0",
+    "@nestjs/platform-express": "11.1.6",
+    "@nestjs/schedule": "6.0.0",
+    "@nestjs/throttler": "6.4.0",
+    "@prisma/client": "6.19.3",
+    "bcryptjs": "3.0.2",
+    "express": "5.1.0",
+    "helmet": "8.1.0",
+    "multer": "2.0.2",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "11.0.10",
+    "@types/express": "5.0.3",
+    "@types/multer": "2.0.0",
+    "@types/node": "22.18.0",
+    "prisma": "6.19.3",
+    "ts-node": "10.9.2",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}
