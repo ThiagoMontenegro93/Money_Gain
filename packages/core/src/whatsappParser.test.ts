@@ -108,3 +108,14 @@ describe('importador WhatsApp - bloco', () => {
     expect(parseWhatsAppBlock('Nome: Ana\nCPF: 123.456.789-00').warnings).toContain('CPF informado é inválido (dígito verificador)');
   });
 });
+
+describe('regressões da revisão', () => {
+  it('rua terminada em "n" não perde a letra; número separado', () => {
+    expect(parseWhatsAppBlock('Endereço: Rua Washington 123, Centro, Rio - RJ').data).toMatchObject({ street: 'Rua Washington', number: '123', district: 'Centro', city: 'Rio', state: 'RJ' });
+    expect(parseWhatsAppBlock('Endereço: Rua X, nº 45, Centro').data).toMatchObject({ street: 'Rua X', number: '45', district: 'Centro' });
+  });
+  it('renda com ponto de milhar', () => {
+    expect(parseWhatsAppBlock('Renda: R$ 2.500').data.incomeCents).toBe(250000);
+    expect(parseWhatsAppBlock('Renda: 1.200,50').data.incomeCents).toBe(120050);
+  });
+});

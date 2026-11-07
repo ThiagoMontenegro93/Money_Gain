@@ -2,7 +2,6 @@ import { BadRequestException, Body, Controller, ForbiddenException, Get, Injecta
 import {
   createLoanWithProjection,
   CreateLoanInput,
-  evaluateCreditLock,
   isValidISODate,
   quoteLoan,
   viewInstallment,
@@ -12,8 +11,8 @@ import { z } from 'zod';
 import { AuditService } from '../common/audit.service';
 import { AuthUser, CurrentUser, isAdmin } from '../common/auth';
 import { PrismaService } from '../common/prisma.service';
-import { d, dt, num, today, ZodPipe } from '../common/util';
-import { ClientsService } from '../clients/clients.service';
+import { d, dt, today, ZodPipe } from '../common/util';
+import { ClientsService, creditLockFor } from '../clients/clients.service';
 import { ScoreService } from '../clients/score.service';
 import { loanInclude, loanSummary, loanViews, paymentDTO, paymentInclude, toEngineInstallment, toEngineLoan } from './loan-mapper';
 
@@ -60,19 +59,9 @@ export class LoansService {
     await this.clients.assertAccess(u, clientId);
     const r = await this.score.recompute(clientId);
     const cl = await this.prisma.client.findUniqueOrThrow({ where: { id: clientId } });
-    const lock = evaluateCreditLock({
-      score: cl.score,
-      classificacao: cl.classificacao,
-      isBlocked: cl.isBlocked,
-      pontualidade: cl.pontualidade === null ? null : num(cl.pontualidade),
-      diasSemPagar: r.diasSemPagar,
-      openDebtCents: r.openDebtCents,
-    });
-    if (lock.level === 'BLOCKED' && !cl.isBlocked && cl.unblockedAt)
-      return { level: 'WARNING' as const, title: '⚠️ Cliente PERDA desbloqueado pelo Super Admin', message: 'Empreste com cautela: cliente com histórico de perda.' };
-    if (cl.status === 'RASCUNHO')
+    if (cl.status !== 'ATIVO')
       return { level: 'BLOCKED' as const, title: 'Ficha incompleta', message: 'Complete a ficha do cliente (Salvar Cliente Completo) antes de emprestar.' };
-    return lock;
+    return creditLockFor(cl, r);
   }
 
   async create(u: AuthUser, b: z.infer<typeof createSchema>) {
@@ -99,7 +88,11 @@ export class LoansService {
         if (upd.count === 0)
           throw new BadRequestException({ message: `Capital disponível insuficiente na carteira de ${lender.name}`, code: 'INSUFFICIENT_CAPITAL' });
       } else {
-        await tx.user.update({ where: { id: lenderId }, data: { capitalEmprestado: { increment: d(b.principalCents) } } });
+        // Dono/gestor empresta do próprio caixa (pode ficar negativo = capital investido líquido)
+        await tx.user.update({
+          where: { id: lenderId },
+          data: { capitalDisponivel: { decrement: d(b.principalCents) }, capitalEmprestado: { increment: d(b.principalCents) } },
+        });
       }
       const l = await tx.loan.create({
         data: {

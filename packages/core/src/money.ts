@@ -30,6 +30,8 @@ export function parseBRL(input: string): Cents | null {
   if (!s) return null;
   let normalized = s;
   if (s.includes(',')) normalized = s.replace(/\./g, '').replace(',', '.');
+  // "2.500" / "1.200.000" sem vírgula: ponto é separador de milhar (padrão brasileiro)
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) normalized = s.replace(/\./g, '');
   const n = Number(normalized);
   return Number.isFinite(n) ? toCents(n) : null;
 }

@@ -18,7 +18,7 @@ import { Response } from 'express';
 import { mkdirSync, existsSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { AuditService } from '../common/audit.service';
-import { AuthUser, CurrentUser, Public } from '../common/auth';
+import { AuthUser, CurrentUser, isAdmin, Public } from '../common/auth';
 import { CryptoService } from '../common/crypto.service';
 import { PrismaService } from '../common/prisma.service';
 
@@ -61,9 +61,20 @@ export class FilesService {
     return { id: f.id, originalName: f.originalName, mimeType: f.mimeType, size: f.size };
   }
 
+  /** Operador só acessa arquivos que enviou ou ligados a clientes/empréstimos dele. */
+  async canAccess(u: AuthUser, fileId: string, uploadedById: string) {
+    if (isAdmin(u) || uploadedById === u.id) return true;
+    const clientScope = { deletedAt: null, OR: [{ responsibleUserId: u.id }, { loans: { some: { lenderUserId: u.id } } }] };
+    const [cl, pay] = await Promise.all([
+      this.prisma.client.count({ where: { ...clientScope, AND: [{ OR: [{ selfieFileId: fileId }, { guarantorDocFileId: fileId }] }] } }),
+      this.prisma.payment.count({ where: { comprovanteFileId: fileId, loan: { lenderUserId: u.id } } }),
+    ]);
+    return cl + pay > 0;
+  }
+
   async signedUrl(u: AuthUser, id: string, baseUrl: string) {
     const f = await this.prisma.storedFile.findUnique({ where: { id } });
-    if (!f) throw new NotFoundException('Arquivo não encontrado');
+    if (!f || !(await this.canAccess(u, id, f.uploadedById))) throw new NotFoundException('Arquivo não encontrado');
     const exp = Math.floor(Date.now() / 1000) + TTL_SECONDS;
     const sig = this.crypto.sign(`${id}.${exp}`);
     await this.audit.log(u.id, 'VIEW_FILE', 'StoredFile', id); // log de visualização (LGPD)

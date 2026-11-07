@@ -95,14 +95,17 @@ function parseAddress(text: string): Partial<ClientForm> {
   const parts = text.split(',').map((p) => p.trim()).filter(Boolean);
   if (!parts.length) return out;
   const first = parts[0];
-  const m = /^(.*?)[\s,nº°]+(\d+[A-Za-z]?)$/.exec(first);
+  const m = /^(.*?)[\s,]+(?:n[º°o.]?\s*)?(\d+[A-Za-z]?)$/i.exec(first);
   if (m) {
     out.street = m[1].trim();
     out.number = m[2];
   } else out.street = first;
-  // Último segmento "Cidade - UF" ou "Cidade/UF"
   const rest = parts.slice(1);
+  // número pode vir separado: "Rua X, 123, Centro" ou "Rua X, nº 123"
+  const numRe = /^(?:n[º°o.]?\s*)?(\d+[A-Za-z]?)$/i;
+  if (!out.number && rest.length && numRe.test(rest[0])) out.number = numRe.exec(rest.shift()!)![1];
   if (rest.length) {
+    // Último segmento "Cidade - UF" ou "Cidade/UF"
     const last = rest[rest.length - 1];
     const cm = /^(.*?)\s*[-/]\s*([A-Za-z]{2})$/.exec(last);
     if (cm && (UFS as readonly string[]).includes(cm[2].toUpperCase())) {
@@ -112,8 +115,6 @@ function parseAddress(text: string): Partial<ClientForm> {
     } else if (rest.length >= 2) {
       out.city = rest.pop()!;
     }
-    // número pode vir separado: "Rua X, 123, Centro"
-    if (!out.number && rest.length && /^\d+[A-Za-z]?$/.test(rest[0])) out.number = rest.shift()!;
     if (rest.length) out.district = rest.shift()!;
     if (rest.length) out.complement = rest.join(', ');
   }

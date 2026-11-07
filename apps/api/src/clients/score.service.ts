@@ -30,9 +30,13 @@ export class ScoreService {
     });
     const active = loans.filter((l) => l.status === 'ATIVO' || l.status === 'PERDA');
     const firstRelease = active.map((l) => iso(l.releaseDate)!).sort()[0] ?? null;
+    // "Dias sem pagar" conta a partir do mais recente entre o último pagamento e a liberação
+    // do empréstimo ativo mais antigo (cliente que volta após quitar não herda o tempo antigo).
+    const lastPaid = iso(lastPayment?.paidAt);
+    const ref = [lastPaid, firstRelease].filter(Boolean).sort().at(-1) ?? null;
     const result = computeScore({
       today: asOf,
-      lastPaymentAt: iso(lastPayment?.paidAt),
+      lastPaymentAt: ref,
       firstReleaseAt: firstRelease,
       installments: loans.flatMap((l) =>
         l.installments.map((i) => ({ dueDate: iso(i.dueDate)!, status: i.status, paidAt: iso(i.paidAt) })),
@@ -51,7 +55,8 @@ export class ScoreService {
     const r = await this.evaluate(clientId, asOf, db);
     const becamePerda = r.isPerda && client.classificacao !== 'PERDA';
     // Saiu da PERDA (voltou a pagar): remove o bloqueio automático (bloqueio manual permanece)
-    const leftPerda = !r.isPerda && client.isBlocked && (client.blockedReason ?? '').startsWith('PERDA automática');
+    const leftPerda = !r.isPerda && client.classificacao === 'PERDA';
+    const autoBlocked = client.isBlocked && (client.blockedReason ?? '').startsWith('PERDA automática');
     await db.client.update({
       where: { id: clientId },
       data: {
@@ -62,14 +67,14 @@ export class ScoreService {
         scoreUpdatedAt: new Date(),
         ...(becamePerda
           ? { isBlocked: true, blockedReason: `PERDA automática - ${r.diasSemPagar} dias sem pagamento`, unblockedAt: null }
-          : leftPerda
+          : leftPerda && autoBlocked
             ? { isBlocked: false, blockedReason: null }
             : {}),
       },
     });
     if (leftPerda) {
       await db.loan.updateMany({ where: { clientId, status: 'PERDA' }, data: { status: 'ATIVO' } });
-      await db.clientHistory.create({ data: { clientId, type: 'SAIU_PERDA', message: `Cliente voltou a pagar - bloqueio automático removido (score ${r.score}/10)` } });
+      await db.clientHistory.create({ data: { clientId, type: 'SAIU_PERDA', message: `Cliente saiu da PERDA (voltou a pagar)${autoBlocked ? ' - bloqueio automático removido' : ''} - score ${r.score}/10` } });
     }
     if (r.isPerda) {
       await db.loan.updateMany({ where: { clientId, status: 'ATIVO' }, data: { status: 'PERDA' } });

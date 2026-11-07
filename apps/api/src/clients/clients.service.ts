@@ -8,6 +8,8 @@ import {
   isValidCPF,
   maskCPF,
   onlyDigits,
+  pct,
+  priceSchedule,
   RESIDENCE_TIMES,
   RELATIONS,
   suggestLimitIncrease,
@@ -24,6 +26,28 @@ import { c, cn, d, dt, iso, num, today } from '../common/util';
 import { loanInclude, loanSummary } from '../loans/loan-mapper';
 import { UsersService } from '../users/users';
 import { ScoreService } from './score.service';
+
+/** Trava de crédito considerando desbloqueio manual do Super Admin. */
+export function creditLockFor(
+  cl: Pick<Client, 'score' | 'classificacao' | 'isBlocked' | 'pontualidade' | 'unblockedAt'>,
+  r: { diasSemPagar: number; openDebtCents: number },
+) {
+  const lock = evaluateCreditLock({
+    score: cl.score,
+    classificacao: cl.classificacao,
+    isBlocked: cl.isBlocked,
+    pontualidade: cl.pontualidade === null ? null : num(cl.pontualidade),
+    diasSemPagar: r.diasSemPagar,
+    openDebtCents: r.openDebtCents,
+  });
+  if (lock.level === 'BLOCKED' && !cl.isBlocked && cl.unblockedAt)
+    return {
+      level: 'WARNING' as const,
+      title: '⚠️ Cliente PERDA desbloqueado pelo Super Admin',
+      message: `Desbloqueado em ${cl.unblockedAt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}. Empreste com cautela: histórico de perda.`,
+    };
+  return lock;
+}
 
 const CLASS_ORDER: Record<ClientScore, number> = { BOM: 0, REGULAR: 1, RUIM: 2, PERDA: 3 };
 
@@ -285,23 +309,7 @@ export class ClientsService {
     const asOf = today();
     const item = this.listItem(cl);
     const scoreDetail = await this.score.evaluate(id, asOf);
-    // Usa a classificação persistida (pode ter sido desbloqueada manualmente)
-    const lock = evaluateCreditLock({
-      score: cl.score,
-      classificacao: cl.classificacao,
-      isBlocked: cl.isBlocked,
-      pontualidade: cl.pontualidade === null ? null : num(cl.pontualidade),
-      diasSemPagar: scoreDetail.diasSemPagar,
-      openDebtCents: scoreDetail.openDebtCents,
-    });
-    const creditLock =
-      lock.level === 'BLOCKED' && !cl.isBlocked && cl.unblockedAt
-        ? {
-            level: 'WARNING' as const,
-            title: '⚠️ Cliente PERDA desbloqueado pelo Super Admin',
-            message: `Desbloqueado em ${cl.unblockedAt.toLocaleDateString('pt-BR')}. Empreste com cautela.`,
-          }
-        : lock;
+    const creditLock = creditLockFor(cl, scoreDetail);
     const loans = cl.loans.map((l) => loanSummary(l, asOf)).sort((a, b) => b.releaseDate.localeCompare(a.releaseDate));
     const activeLoans = loans.filter((l) => l.status === 'ATIVO');
 
@@ -428,14 +436,23 @@ export class ClientsService {
       const from = num(loan.interestRate);
       if (!(body.newRatePercent >= 0 && body.newRatePercent < from)) throw new BadRequestException('Nova taxa deve ser menor que a atual');
       const saldo = c(loan.saldoDevedor);
-      const interest = Math.round((saldo * body.newRatePercent) / 100);
-      const open = loan.installments.filter((i) => i.status === 'PENDENTE' && loan.type === 'INTEREST_ONLY');
+      const open = loan.installments.filter((i) => i.status === 'PENDENTE').sort((a, b) => a.number - b.number);
+      // Recalcula as parcelas em aberto com a nova taxa (mesmas regras do motor)
+      const rows =
+        loan.type === 'INTEREST_ONLY'
+          ? open.map((i) => ({ principal: c(i.principalValue), interest: pct(saldo, body.newRatePercent) }))
+          : priceSchedule(saldo, body.newRatePercent, open.length);
       await this.prisma.$transaction([
         this.prisma.loan.update({ where: { id: loan.id }, data: { interestRate: body.newRatePercent, version: { increment: 1 } } }),
-        ...open.map((i) =>
+        ...open.map((i, idx) =>
           this.prisma.installment.update({
             where: { id: i.id },
-            data: { interestValue: d(interest), originalValue: d(c(i.principalValue) + interest), updatedValue: d(c(i.principalValue) + interest) },
+            data: {
+              principalValue: d(rows[idx].principal),
+              interestValue: d(rows[idx].interest),
+              originalValue: d(rows[idx].principal + rows[idx].interest),
+              updatedValue: d(rows[idx].principal + rows[idx].interest),
+            },
           }),
         ),
         this.prisma.clientHistory.create({

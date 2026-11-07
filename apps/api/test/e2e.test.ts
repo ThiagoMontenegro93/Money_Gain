@@ -323,6 +323,40 @@ describe('empréstimo + projeção + aprovação (fluxo completo do re-emprésti
   });
 });
 
+describe('regressões de segurança e concorrência', () => {
+  it('operador não obtém URL de arquivo de outro usuário', async () => {
+    const fd = new FormData();
+    fd.append('file', new Blob([Buffer.from('%PDF-1.4 privado')], { type: 'application/pdf' }), 'doc.pdf');
+    const f = await (await fetch(`${API}/files`, { method: 'POST', headers: { authorization: `Bearer ${gestor}` }, body: fd })).json();
+    expect((await call(carlos, 'GET', `/files/${f.id}/url`)).status).toBe(404);
+    expect((await call(owner, 'GET', `/files/${f.id}/url`)).status).toBe(200);
+    // e não pode usar como comprovante
+    const loans = await ok(carlos, 'GET', '/loans?status=ATIVO');
+    const r = await call(carlos, 'POST', '/payments', { loanId: loans[0].id, type: 'JUROS', amountCents: 99999999, paidAt: today, comprovanteFileId: f.id });
+    expect(r.status).toBe(400);
+  });
+
+  it('duplo clique gera só um recibo pendente', async () => {
+    const c = await ok(owner, 'POST', '/clients', { form: fullForm({ fullName: 'Cliente Concorrência' }) });
+    const loan = await ok(owner, 'POST', '/loans', { clientId: c.id, type: 'INTEREST_ONLY', method: 'MONTHLY', principalCents: 10000, ratePercent: 10, multaDiaPercent: 0, releaseDate: addMonthsAnchored(today, -1) });
+    const body = { loanId: loan.id, type: 'JUROS', amountCents: 1000, paidAt: today };
+    const rs = await Promise.all([1, 2, 3, 4].map(() => call(owner, 'POST', '/payments', body)));
+    expect(rs.filter((r) => r.status === 201)).toHaveLength(1);
+    expect(rs.filter((r) => r.status === 409)).toHaveLength(3);
+  });
+
+  it('dono que empresta direto debita o próprio caixa e recebe de volta só o devido', async () => {
+    const before = (await ok(owner, 'GET', '/auth/me')).wallet;
+    const c = await ok(owner, 'POST', '/clients', { form: fullForm({ fullName: 'Cliente Dono Direto' }) });
+    const loan = await ok(owner, 'POST', '/loans', { clientId: c.id, type: 'INTEREST_ONLY', method: 'MONTHLY', principalCents: 50000, ratePercent: 10, multaDiaPercent: 0, releaseDate: addMonthsAnchored(today, -1) });
+    const p = await ok(owner, 'POST', '/payments', { loanId: loan.id, type: 'QUITACAO', amountCents: 55000, paidAt: today });
+    await ok(owner, 'POST', `/payments/${p.id}/approve`, { password: PASS });
+    const after = (await ok(owner, 'GET', '/auth/me')).wallet;
+    expect(after.capitalDisponivelCents - before.capitalDisponivelCents).toBe(5000);
+    expect(after.capitalEmprestadoCents).toBe(before.capitalEmprestadoCents);
+  });
+});
+
 describe('dashboard e rotina diária', () => {
   it('dashboard do dono e do operador', async () => {
     const d = await ok(owner, 'GET', '/dashboard');

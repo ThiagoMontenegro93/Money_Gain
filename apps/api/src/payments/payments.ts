@@ -61,7 +61,7 @@ export class PaymentsService {
       throw new BadRequestException({ message: 'Anexe o comprovante PIX do cliente', code: 'PROOF_REQUIRED' });
     if (b.comprovanteFileId) {
       const f = await this.prisma.storedFile.findUnique({ where: { id: b.comprovanteFileId } });
-      if (!f) throw new BadRequestException('Comprovante não encontrado (faça o upload novamente)');
+      if (!f || (!isAdmin(u) && f.uploadedById !== u.id)) throw new BadRequestException('Comprovante não encontrado (faça o upload novamente)');
     }
     const pending = await this.prisma.payment.count({ where: { loanId: loan.id, status: 'AGUARDANDO_APROVACAO' } });
     if (pending) throw new ConflictException({ message: 'Já existe um recibo aguardando aprovação neste empréstimo', code: 'PENDING_EXISTS' });
@@ -73,7 +73,8 @@ export class PaymentsService {
     const expected = b.type === 'AMORTIZACAO' ? b.amountCents : expectedAmount(eLoan, eInst, b.type, b.paidAt);
     const installment = plan.installmentNumber ? loan.installments.find((i) => i.number === plan.installmentNumber) : null;
 
-    const p = await this.prisma.payment.create({
+    const p = await this.prisma.payment
+      .create({
       data: {
         loanId: loan.id,
         installmentId: installment?.id,
@@ -86,7 +87,13 @@ export class PaymentsService {
         createdById: u.id,
       },
       include: paymentInclude,
-    });
+    })
+      .catch((e: unknown) => {
+        // Índice único parcial: 1 recibo pendente por empréstimo (protege contra duplo clique / concorrência)
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002')
+          throw new ConflictException({ message: 'Já existe um recibo aguardando aprovação neste empréstimo', code: 'PENDING_EXISTS' });
+        throw e;
+      });
     await this.audit.log(u.id, 'CREATE', 'Payment', p.id, { type: b.type, amountCents: b.amountCents });
     await this.audit.notifyAdmins('Recibo aguardando aprovação', `${u.name} lançou ${b.type} de R$ ${(b.amountCents / 100).toFixed(2)} - ${loan.client.fullName}`, { paymentId: p.id });
     return paymentDTO(p);
