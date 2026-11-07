@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { errorMessage } from '../api/http';
+import { onReconnect } from '../offline/state';
 
 /** Carrega dados da API com estados de carregando / erro e função reload. */
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = []) {
@@ -27,6 +28,9 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = []) {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Fase 4: quando a API volta a responder depois de um período offline, recarrega os dados da tela
+  useEffect(() => onReconnect(() => void reload()), [reload]);
 
   return { data, error, loading, reload, setData };
 }

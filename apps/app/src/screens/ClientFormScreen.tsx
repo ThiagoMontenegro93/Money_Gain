@@ -33,6 +33,7 @@ import { Badge, Button, Checkbox, ErrorState, InlineError, Input, Loading, Money
 import { WhatsAppImporter } from '@/components/WhatsAppImporter';
 import { useLayout } from '@/hooks/useLayout';
 import { useUsers } from '@/hooks/useUsers';
+import { QUEUED_MESSAGE, submitOrQueue } from '@/offline/outbox';
 import { colors } from '@/theme';
 import { dateTimeBR } from '@/utils/format';
 
@@ -167,9 +168,27 @@ export function ClientFormScreen({ clientId }: { clientId?: string }) {
     }
     setSaving(draft ? 'draft' : 'full');
     try {
-      const d = clientId ? await api.clients.update(clientId, payload, draft) : await api.clients.create(payload, draft);
+      if (clientId) {
+        const d = await api.clients.update(clientId, payload, draft);
+        toast(draft ? 'Rascunho salvo' : 'Cliente salvo com sucesso', 'success');
+        router.replace(`/clients/${d.id}`);
+        return;
+      }
+      // cadastro novo: sem internet vai para a fila do aparelho (Fase 4)
+      const r = await submitOrQueue<ClientDetail>({
+        kind: 'client',
+        label: `${draft ? 'Rascunho de cliente' : 'Novo cliente'}: ${payload.fullName || 'sem nome'}`,
+        path: '/clients',
+        body: { form: payload, draft },
+        fileFields: ['form.selfieFileId', 'form.guarantorDocFileId'],
+      });
+      if (r.queued) {
+        toast(QUEUED_MESSAGE, 'info');
+        router.replace('/clients');
+        return;
+      }
       toast(draft ? 'Rascunho salvo' : 'Cliente salvo com sucesso', 'success');
-      router.replace(`/clients/${d.id}`);
+      router.replace(`/clients/${r.data.id}`);
     } catch (e) {
       setSaveErr(errorMessage(e));
     } finally {
@@ -261,7 +280,7 @@ export function ClientFormScreen({ clientId }: { clientId?: string }) {
             </RowF>
           </Section>
           <Section title="Foto e Observações">
-            <FileSlot testID="f-selfie" label="Foto Rosto (Selfie)" fileId={form.selfieFileId} onChange={(id) => set('selfieFileId', id)} kind="image" />
+            <FileSlot testID="f-selfie" label="Foto Rosto (Selfie)" fileId={form.selfieFileId} onChange={(id) => set('selfieFileId', id)} kind="image" offline={!clientId} />
             <Input label="Observações Gerais" multiline rows={4} value={form.notes} onChangeText={(v) => set('notes', v)} placeholder="Informações adicionais sobre o cliente" />
           </Section>
         </>
@@ -363,7 +382,7 @@ export function ClientFormScreen({ clientId }: { clientId?: string }) {
                   <Input testID="f-guarantorPhone" label="Telefone Fiador" required mask="phone" value={form.guarantorPhone} onChangeText={(v) => set('guarantorPhone', v)} error={e.guarantorPhone} placeholder="(21) 99999-9999" style={{ flex: 1 }} />
                   <Select label="Vínculo" value={form.guarantorRelation ?? null} onChange={(v) => set('guarantorRelation', v)} allowEmpty placeholder="Selecione" options={GUARANTOR_RELATIONS} style={{ flex: 1 }} />
                 </RowF>
-                <FileSlot label="Foto Documento Fiador" fileId={form.guarantorDocFileId} onChange={(id) => set('guarantorDocFileId', id)} kind="imageOrPdf" />
+                <FileSlot label="Foto Documento Fiador" fileId={form.guarantorDocFileId} onChange={(id) => set('guarantorDocFileId', id)} kind="imageOrPdf" offline={!clientId} />
               </>
             ) : (
               <Text style={{ color: colors.textMuted }}>Sem fiador para este cliente.</Text>
@@ -402,10 +421,10 @@ export function ClientFormScreen({ clientId }: { clientId?: string }) {
           <Section title="Documentos Oficiais">
             <RowF>
               <View style={{ flex: 1 }}>
-                <FileSlot label="Selfie do cliente" fileId={form.selfieFileId} onChange={(id) => set('selfieFileId', id)} kind="image" />
+                <FileSlot label="Selfie do cliente" fileId={form.selfieFileId} onChange={(id) => set('selfieFileId', id)} kind="image" offline={!clientId} />
               </View>
               <View style={{ flex: 1 }}>
-                <FileSlot label="Foto documento do fiador" fileId={form.guarantorDocFileId} onChange={(id) => set('guarantorDocFileId', id)} kind="imageOrPdf" hint={form.hasGuarantor ? undefined : 'Ative "Tem Fiador" na aba Vínculos'} />
+                <FileSlot label="Foto documento do fiador" fileId={form.guarantorDocFileId} onChange={(id) => set('guarantorDocFileId', id)} kind="imageOrPdf" offline={!clientId} hint={form.hasGuarantor ? undefined : 'Ative "Tem Fiador" na aba Vínculos'} />
               </View>
             </RowF>
           </Section>

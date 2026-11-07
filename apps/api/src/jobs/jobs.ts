@@ -2,6 +2,7 @@ import { Controller, Injectable, Logger, Post } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { daysLate, viewInstallment } from '@lendcontrol/core';
 import { AuditService } from '../common/audit.service';
+import { IDEMPOTENCY_RETENTION_DAYS } from '../common/idempotency.interceptor';
 import { AuthUser, CurrentUser, Roles } from '../common/auth';
 import { PrismaService } from '../common/prisma.service';
 import { d, today } from '../common/util';
@@ -48,7 +49,9 @@ export class JobsService {
         }
       }
       const clients = await this.score.recomputeAll(asOf);
-      const result = { asOf, loans: loans.length, installmentsUpdated: updated, clientsScored: clients, ms: Date.now() - started };
+      // Fase 4: chaves de idempotência da fila offline ficam retidas por 7 dias
+      const { count: idempotencyPurged } = await this.prisma.idempotencyKey.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - IDEMPOTENCY_RETENTION_DAYS * 86_400_000) } } });
+      const result = { asOf, loans: loans.length, installmentsUpdated: updated, clientsScored: clients, idempotencyPurged, ms: Date.now() - started };
       this.logger.log(`Rotina diária (${trigger}): ${JSON.stringify(result)}`);
       await this.audit.log(null, 'DAILY_JOB', 'System', null, { trigger, ...result });
       return result;

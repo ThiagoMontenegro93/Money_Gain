@@ -1,4 +1,6 @@
 import { API_URL } from '../config';
+import { cacheRead, cacheWrite, isCacheable } from '../offline/cache';
+import { noteCacheServed, noteNetworkFail, noteNetworkOk } from '../offline/state';
 
 export class ApiError extends Error {
   constructor(
@@ -58,8 +60,35 @@ async function confirmSessionLost(path: string) {
   }
 }
 
-export async function request<T>(method: string, path: string, opts: { body?: unknown; query?: Query; form?: FormData } = {}): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
+export interface RequestOpts {
+  body?: unknown;
+  query?: Query;
+  form?: FormData;
+  /** Cabeçalhos extras (ex.: Idempotency-Key da fila offline). */
+  headers?: Record<string, string>;
+  /** Tempo máximo; ao estourar, vira erro de rede (status 0). */
+  timeoutMs?: number;
+}
+
+/** Leitura com cache offline: rede primeiro; se a rede falhar, serve a última resposta guardada. */
+export async function request<T>(method: string, path: string, opts: RequestOpts = {}): Promise<T> {
+  const full = `${path}${buildQuery(opts.query)}`;
+  if (method !== 'GET' || !isCacheable(full)) return send<T>(method, path, opts);
+  try {
+    const data = await send<T>(method, path, { timeoutMs: 20_000, ...opts });
+    void cacheWrite(full, data);
+    return data;
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 0) throw e;
+    const hit = await cacheRead<T>(full);
+    if (!hit) throw e;
+    noteCacheServed(hit.t);
+    return hit.d;
+  }
+}
+
+async function send<T>(method: string, path: string, opts: RequestOpts): Promise<T> {
+  const headers: Record<string, string> = { Accept: 'application/json', ...opts.headers };
   if (authToken) headers.Authorization = `Bearer ${authToken}`;
   let body: BodyInit | undefined;
   if (opts.form) body = opts.form as unknown as BodyInit;
@@ -68,11 +97,17 @@ export async function request<T>(method: string, path: string, opts: { body?: un
     body = JSON.stringify(opts.body);
   }
   let res: Response;
+  const ctrl = opts.timeoutMs && typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), opts.timeoutMs) : null;
   try {
-    res = await fetch(`${API_URL}${path}${buildQuery(opts.query)}`, { method, headers, body });
+    res = await fetch(`${API_URL}${path}${buildQuery(opts.query)}`, { method, headers, body, signal: ctrl?.signal });
   } catch {
-    throw new ApiError(0, `Não foi possível conectar à API (${API_URL}). Verifique se o servidor está no ar.`);
+    noteNetworkFail();
+    throw new ApiError(0, `Não foi possível conectar à API (${API_URL}). Verifique sua conexão com a internet.`);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
+  noteNetworkOk();
   const text = await res.text();
   let data: unknown = null;
   if (text) {
@@ -96,7 +131,7 @@ export const http = {
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, { body }),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, { body: body ?? {} }),
   del: <T>(path: string) => request<T>('DELETE', path),
-  upload: <T>(path: string, form: FormData) => request<T>('POST', path, { form }),
+  upload: <T>(path: string, form: FormData, headers?: Record<string, string>) => request<T>('POST', path, { form, headers, timeoutMs: headers ? 120_000 : undefined }),
 };
 
 /** Baixa um arquivo autenticado (ex.: PDF) como Blob. */

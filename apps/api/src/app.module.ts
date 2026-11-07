@@ -24,6 +24,7 @@ import { MessagingService } from './messaging/messaging.service';
 import { DocumentsController, DocumentsService } from './documents/documents';
 import { BackupsController, BackupsService } from './backups/backups';
 import { MailService } from './common/mail.service';
+import { IdempotencyInterceptor } from './common/idempotency.interceptor';
 
 const jwtSecret = process.env.JWT_SECRET ?? '';
 if (jwtSecret.length < 32) throw new Error('JWT_SECRET deve ter ao menos 32 caracteres');
@@ -65,6 +66,7 @@ if (jwtSecret.length < 32) throw new Error('JWT_SECRET deve ter ao menos 32 cara
     DocumentsService,
     MailService,
     BackupsService,
+    IdempotencyInterceptor,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

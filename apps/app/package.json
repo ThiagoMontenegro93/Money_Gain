@@ -13,14 +13,18 @@
     "test:responsive": "node e2e/responsive.js ../../docs/screenshots",
     "test:flow": "node e2e/flow.js ../../docs/screenshots",
     "test:fase2": "node e2e/fase2.js ../../docs/screenshots",
-    "test:fase3": "node e2e/fase3.js ../../docs/screenshots"
+    "test:fase3": "node e2e/fase3.js ../../docs/screenshots",
+    "test:offline": "node e2e/offline.js ../../docs/screenshots"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",
     "@lendcontrol/core": "workspace:*",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/netinfo": "11.4.1",
     "expo": "~54.0.0",
     "expo-constants": "~18.0.14",
     "expo-document-picker": "~14.0.8",
+    "expo-file-system": "19.0.24",
     "expo-image-picker": "~17.0.11",
     "expo-linking": "~8.0.12",
     "expo-local-authentication": "~17.0.9",

@@ -18,6 +18,7 @@ import { Response } from 'express';
 import { mkdirSync, existsSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { AuditService } from '../common/audit.service';
+import { IdempotencyInterceptor } from '../common/idempotency.interceptor';
 import { AuthUser, CurrentUser, isAdmin, Public } from '../common/auth';
 import { CryptoService } from '../common/crypto.service';
 import { PrismaService } from '../common/prisma.service';
@@ -100,7 +101,7 @@ export class FilesController {
   constructor(private files: FilesService) {}
 
   @Post()
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX } }))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX } }), IdempotencyInterceptor)
   upload(@CurrentUser() u: AuthUser, @UploadedFile() file: Express.Multer.File) {
     return this.files.save(u, file);
   }

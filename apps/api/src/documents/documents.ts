@@ -15,6 +15,7 @@ import {
   Query,
   Res,
   UnprocessableEntityException,
+  UseInterceptors,
 } from '@nestjs/common';
 import { formatBRL, formatCPF, isoToBR, isValidISODate, RELATIONS, simulatePayoff, viewInstallment } from '@lendcontrol/core';
 import { DocumentType } from '@prisma/client';
@@ -25,6 +26,7 @@ import PDFDocument from 'pdfkit';
 import sharp from 'sharp';
 import { z } from 'zod';
 import { AuditService } from '../common/audit.service';
+import { IdempotencyInterceptor } from '../common/idempotency.interceptor';
 import { AuthUser, CurrentUser, isAdmin, Public, Roles } from '../common/auth';
 import { CryptoService } from '../common/crypto.service';
 import { PrismaService } from '../common/prisma.service';
@@ -405,6 +407,7 @@ export class DocumentsController {
   }
 
   @Post('clients/:id/receipts')
+  @UseInterceptors(IdempotencyInterceptor)
   createReceipt(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(receiptSchema)) b: z.infer<typeof receiptSchema>) {
     return this.docs.createReceipt(u, id, b);
   }

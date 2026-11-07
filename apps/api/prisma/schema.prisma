@@ -622,3 +622,24 @@ model MessageLog {
   @@index([status, scheduledFor])
   @@index([clientId, createdAt])
 }
+
+// ---------------------------------------------------------------------------
+// Fase 4 (offline-first): chaves de idempotência das ações enviadas pela fila do aparelho
+// ---------------------------------------------------------------------------
+
+/// Resposta original de um POST com cabeçalho Idempotency-Key (por usuário), retida por 7 dias.
+model IdempotencyKey {
+  id          String    @id @default(cuid())
+  userId      String
+  key         String
+  method      String
+  path        String
+  /// null enquanto a primeira requisição ainda está em processamento
+  statusCode  Int?
+  response    Json?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@unique([userId, key])
+  @@index([createdAt])
+}

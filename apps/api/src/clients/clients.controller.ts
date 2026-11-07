@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Ip, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Ip, Param, Post, Put, Query, UseInterceptors } from '@nestjs/common';
 import { ClientForm, formatCEP, onlyDigits, parseWhatsApp } from '@lendcontrol/core';
 import { z } from 'zod';
 import { AuthUser, CurrentUser } from '../common/auth';
+import { IdempotencyInterceptor } from '../common/idempotency.interceptor';
 import { ZodPipe } from '../common/util';
 import { ClientsService } from './clients.service';
 
@@ -68,6 +69,7 @@ export class ClientsController {
   }
 
   @Post('clients')
+  @UseInterceptors(IdempotencyInterceptor)
   create(@CurrentUser() u: AuthUser, @Body(new ZodPipe(saveSchema)) b: z.infer<typeof saveSchema>) {
     return this.clients.create(u, b.form as ClientForm, !!b.draft);
   }
@@ -93,6 +95,7 @@ export class ClientsController {
   }
 
   @Post('clients/:id/collection-attempts')
+  @UseInterceptors(IdempotencyInterceptor)
   attempt(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(attemptSchema)) b: z.infer<typeof attemptSchema>) {
     return this.clients.addAttempt(u, id, b.type, b.result);
   }

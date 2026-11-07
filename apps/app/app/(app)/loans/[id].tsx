@@ -12,6 +12,7 @@ import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Badge, Button, Card, ErrorState, InlineError, Input, KV, Loading, Modal, MoneyInput, Notice, ScoreBadge, Segmented, StatusChip, Stack } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
+import { QUEUED_MESSAGE, submitOrQueue, useOutbox } from '@/offline/outbox';
 import { useLayout } from '@/hooks/useLayout';
 import { colors } from '@/theme';
 import { brl, dateBR, LOAN_STATUS_LABEL, LOAN_TYPE_LABEL, PAYMENT_TYPE_LABEL } from '@/utils/format';
@@ -43,6 +44,7 @@ export default function LoanDetailScreen() {
   const toast = useToast();
   const { isDesktop } = useLayout();
   const { data: loan, error, loading, reload } = useAsync<LoanDetail>(() => api.loans.get(String(id)), [id]);
+  const outbox = useOutbox();
 
   const [simOpen, setSimOpen] = useState(false);
   const [simDate, setSimDate] = useState(isoToBR(todayISO()));
@@ -88,6 +90,8 @@ export default function LoanDetailScreen() {
 
   const active = loan.status === 'ATIVO' || loan.status === 'PERDA';
   const pending = loan.payments.find((p) => p.status === 'AGUARDANDO_APROVACAO');
+  // recibo salvo no aparelho (sem internet) para este empréstimo, ainda não enviado
+  const queued = outbox.items.find((i) => i.kind === 'payment' && i.meta?.loanId === loan.id && i.status === 'pending');
   const q = loan.quote;
 
   const openPay = () => {
@@ -123,10 +127,21 @@ export default function LoanDetailScreen() {
     setPayErr(null);
     try {
       const num = payType === 'JUROS' || payType === 'PARCELA' ? payQuote?.next?.number : undefined;
-      await api.payments.create({ loanId: loan.id, type: payType, amountCents: amount, paidAt: iso, ...(num ? { installmentNumber: num } : {}), ...(fileId ? { comprovanteFileId: fileId } : {}), ...(notes.trim() ? { notes: notes.trim() } : {}) });
+      const body = { loanId: loan.id, type: payType, amountCents: amount, paidAt: iso, ...(num ? { installmentNumber: num } : {}), ...(fileId ? { comprovanteFileId: fileId } : {}), ...(notes.trim() ? { notes: notes.trim() } : {}) };
+      const r = await submitOrQueue({
+        kind: 'payment',
+        label: `Recibo ${PAYMENT_TYPE_LABEL[payType] ?? payType} de ${brl(amount)} · empréstimo #${loan.code} (${loan.clientName})`,
+        path: '/payments',
+        body,
+        fileFields: ['comprovanteFileId'],
+        meta: { loanId: loan.id },
+      });
       setPayOpen(false);
-      toast('Recibo lançado - aguardando aprovação do administrador');
-      await reload();
+      if (r.queued) toast(`${QUEUED_MESSAGE}. O recibo vai para aprovação do administrador.`, 'info');
+      else {
+        toast('Recibo lançado - aguardando aprovação do administrador');
+        await reload();
+      }
     } catch (e) {
       setPayErr(errorMessage(e));
     } finally {
@@ -145,10 +160,11 @@ export default function LoanDetailScreen() {
         <>
           <StatusChip size="md" status={loan.status} label={LOAN_STATUS_LABEL[loan.status]} />
           <Button testID="simulate" title="Simular Quitação" icon="🧮" variant="secondary" disabled={!active} onPress={() => { setSimQuote(null); setSimErr(null); setSimOpen(true); }} />
-          <Button testID="launch-receipt" title="Lançar recibo" icon="🧾" variant="success" disabled={!active || !!pending} onPress={openPay} />
+          <Button testID="launch-receipt" title="Lançar recibo" icon="🧾" variant="success" disabled={!active || !!pending || !!queued} onPress={openPay} />
         </>
       }
     >
+      {queued && !pending ? <Notice testID="queued-receipt" tone="warning" text={`📴 Recibo de ${brl(Number(queued.body.amountCents))} salvo no aparelho — será enviado para aprovação quando a internet voltar.`} /> : null}
       {pending ? <Notice tone="warning" text={`⏳ Há um recibo de ${brl(pending.valueCents)} (${PAYMENT_TYPE_LABEL[pending.type] ?? pending.type}) aguardando aprovação. Novos lançamentos ficam bloqueados até a decisão.`} /> : null}
       {loan.status === 'PERDA' ? <Notice tone="danger" text={`💀 Dias sem pagar: ${loan.diasSemPagar} dias - PERDA`} /> : null}
       {loan.status === 'QUITADO' ? <Notice tone="success" text={`✅ Quitado em ${dateBR(loan.quitadoEm)}`} /> : null}
@@ -231,7 +247,7 @@ export default function LoanDetailScreen() {
             hint={suggested(payQuote, payType) != null ? `Valor sugerido: ${brl(suggested(payQuote, payType))}${payQuote?.next && (payType === 'JUROS' || payType === 'PARCELA') ? ` (parcela ${payQuote.next.number})` : ''}` : undefined} />
         </Stack>
         {touchedAmount && suggested(payQuote, payType) != null ? <Button size="sm" variant="ghost" title="Usar valor sugerido" onPress={() => setTouchedAmount(false)} style={{ alignSelf: 'flex-start', marginTop: -8, marginBottom: 6 }} /> : null}
-        <FileSlot testID="receipt-file" label="Comprovante PIX" fileId={fileId} onChange={setFileId} kind="imageOrPdf" hint="Imagem ou PDF até 10 MB" />
+        <FileSlot testID="receipt-file" label="Comprovante PIX" fileId={fileId} onChange={setFileId} kind="imageOrPdf" hint="Imagem ou PDF até 10 MB" offline />
         <Input label="Observações" value={notes} onChangeText={setNotes} multiline rows={2} placeholder="Opcional" />
         <Notice tone="info" text="🔒 O recibo fica AGUARDANDO APROVAÇÃO. A parcela só é baixada e a carteira atualizada após o administrador aprovar." />
         <InlineError message={payErr} />

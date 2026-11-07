@@ -64,6 +64,18 @@ export class MessagingService implements OnModuleInit, OnModuleDestroy {
     this.logger.log('Fila BullMQ "whatsapp" ativa');
   }
 
+  /** Saúde do Redis da fila: 'off' sem fila configurada, 'erro' se não responder ao PING em 2 s. */
+  async redisStatus(): Promise<'ok' | 'off' | 'erro'> {
+    if (!this.queue) return 'off';
+    try {
+      const client = await this.queue.client;
+      const pong = await Promise.race([client.ping(), new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 2000))]);
+      return pong === 'PONG' ? 'ok' : 'erro';
+    } catch {
+      return 'erro';
+    }
+  }
+
   async onModuleDestroy() {
     await this.worker?.close();
     await this.queue?.close();

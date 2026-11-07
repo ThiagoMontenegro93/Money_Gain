@@ -15,6 +15,7 @@ import { useToast } from '@/components/Toast';
 import { Badge, Button, Card, Checkbox, Empty, ErrorState, Input, KV, Loading, Modal, MoneyInput, Notice, ProgressBar, ScoreBadge, Select, StatusChip, Stack, Tabs } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
 import { useLayout } from '@/hooks/useLayout';
+import { QUEUED_MESSAGE, submitOrQueue, useOutbox } from '@/offline/outbox';
 import { classBand, classColor, colors, scoreColor } from '@/theme';
 import { brl, CLIENT_STATUS_LABEL, dateBR, dateTimeBR, decimalText, parseDecimal, pctText } from '@/utils/format';
 import { openBlob, openFile } from '@/utils/files';
@@ -48,6 +49,7 @@ export default function ClientDetailScreen() {
   const isAdmin = hasRole('ADMIN', 'SUPER_ADMIN');
   const { isDesktop } = useLayout();
   const { data: c, error, loading, reload, setData } = useAsync(() => api.clients.get(String(id)), [id]);
+  const outbox = useOutbox();
   const [cpf, setCpf] = useState<{ cpf: string; guarantorCpf: string | null } | null>(null);
   const [unblockOpen, setUnblockOpen] = useState(false);
   const [limitOpen, setLimitOpen] = useState(false);
@@ -96,10 +98,20 @@ export default function ClientDetailScreen() {
     if (!attType || attResult.trim().length < 2) return toast('Informe o tipo e o resultado da tentativa', 'error');
     setAttBusy(true);
     try {
-      await api.clients.addCollectionAttempt(c.id, attType, attResult.trim());
+      const typeLabel = labelOf(ATTEMPT_TYPES, attType);
+      const r = await submitOrQueue({
+        kind: 'attempt',
+        label: `Tentativa de cobrança (${typeLabel}) · ${c.fullName}`,
+        path: `/clients/${encodeURIComponent(c.id)}/collection-attempts`,
+        body: { type: attType, result: attResult.trim() },
+        meta: { clientId: c.id },
+      });
       setAttResult('');
-      toast('Tentativa de cobrança registrada');
-      await reload();
+      if (r.queued) toast(QUEUED_MESSAGE, 'info');
+      else {
+        toast('Tentativa de cobrança registrada');
+        await reload();
+      }
     } catch (e) {
       toast(errorMessage(e), 'error');
     } finally {
@@ -306,7 +318,16 @@ export default function ClientDetailScreen() {
             <Input testID="attempt-result" label="Resultado" value={attResult} onChangeText={setAttResult} placeholder="Ex.: Prometeu pagar sexta-feira" style={{ flex: 2 }} />
             <Button testID="attempt-save" title="Registrar tentativa" icon="➕" loading={attBusy} onPress={() => void addAttempt()} style={{ marginBottom: 14 }} />
           </Stack>
-          {c.collectionAttempts.length === 0 ? <Empty text="Nenhuma tentativa registrada" icon="📋" /> : null}
+          {outbox.items.filter((i) => i.kind === 'attempt' && i.meta?.clientId === c.id).map((i) => (
+            <View key={i.id} testID="queued-attempt" style={styles.tl}>
+              <View style={[styles.tlDot, { backgroundColor: colors.warning }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontWeight: '800' }}>{labelOf(ATTEMPT_TYPES, String(i.body.type))} <Text style={{ color: i.status === 'failed' ? colors.danger : colors.warning, fontWeight: '700' }}>· {i.status === 'failed' ? `não enviada: ${i.error ?? ''}` : '📴 salva no aparelho, aguardando envio'}</Text></Text>
+                <Text style={{ color: colors.textMuted, marginTop: 2 }}>{String(i.body.result)}</Text>
+              </View>
+            </View>
+          ))}
+          {c.collectionAttempts.length === 0 && !outbox.items.some((i) => i.kind === 'attempt' && i.meta?.clientId === c.id) ? <Empty text="Nenhuma tentativa registrada" icon="📋" /> : null}
           {c.collectionAttempts.map((a) => (
             <View key={a.id} style={styles.tl}>
               <View style={styles.tlDot} />

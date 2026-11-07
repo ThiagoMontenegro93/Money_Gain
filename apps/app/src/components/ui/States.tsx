@@ -41,10 +41,10 @@ export function InlineError({ message }: { message: string | null | undefined })
   );
 }
 
-export function Notice({ text, tone = 'info' }: { text: React.ReactNode; tone?: 'info' | 'warning' | 'success' | 'danger' }) {
+export function Notice({ text, tone = 'info', testID }: { text: React.ReactNode; tone?: 'info' | 'warning' | 'success' | 'danger'; testID?: string }) {
   const c = { info: ['#0C4A6E', '#38BDF8', '#E0F2FE'], warning: ['#451A03', '#F59E0B', '#FEF3C7'], success: ['#064E3B', '#10B981', '#D1FAE5'], danger: ['#450A0A', '#EF4444', '#FEE2E2'] }[tone];
   return (
-    <View style={[styles.notice, { backgroundColor: c[0], borderColor: c[1] }]}>
+    <View testID={testID} style={[styles.notice, { backgroundColor: c[0], borderColor: c[1] }]}>
       {typeof text === 'string' ? <Text style={{ color: c[2], fontWeight: '600', fontSize: 14 }}>{text}</Text> : text}
     </View>
   );

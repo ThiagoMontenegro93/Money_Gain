@@ -9,3 +9,4 @@ backups/
 coverage/
 storage-test/
 .env.prod
+dump.rdb

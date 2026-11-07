@@ -5,6 +5,7 @@ import { PrismaService } from '../common/prisma.service';
 import { c, iso, today } from '../common/util';
 import { ClientsService } from '../clients/clients.service';
 import { toEngineInstallment, toEngineLoan } from '../loans/loan-mapper';
+import { MessagingService } from '../messaging/messaging.service';
 
 @Injectable()
 export class DashboardService {
@@ -86,13 +87,15 @@ export class DashboardController {
   constructor(
     private dash: DashboardService,
     private prisma: PrismaService,
+    private messaging: MessagingService,
   ) {}
 
   @Public()
   @Get('health')
   async health() {
-    await this.prisma.$queryRaw`SELECT 1`;
-    return { status: 'ok', version: '6.5.0', time: new Date().toISOString(), today: today() };
+    const db = await this.prisma.$queryRaw`SELECT 1`.then(() => true).catch(() => false);
+    const redis = await this.messaging.redisStatus();
+    return { status: db ? 'ok' : 'degradado', db, redis, version: '6.5.0', time: new Date().toISOString(), today: today() };
   }
 
   @Get('dashboard')

@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Image, Linking, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { brDateToISO, isoToBR, todayISO } from '@lendcontrol/core';
 import { api } from '../api';
-import { errorMessage } from '../api/http';
+import { ApiError, errorMessage } from '../api/http';
+import { holdFile, isLocalFileRef, QUEUED_MESSAGE, submitOrQueue } from '../offline/outbox';
 import type { ClientDocumentDTO, ClientReceiptDTO, DocumentType } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { useAsync } from '../hooks/useAsync';
@@ -22,18 +23,21 @@ function useCols() {
 }
 
 /** Botão de anexar: abre o seletor, faz upload privado e devolve o id do arquivo. */
-function FilePickButton({ testID, picked, onPicked, onError }: { testID: string; picked: { id: string; file: PickedFile } | null; onPicked: (v: { id: string; file: PickedFile } | null) => void; onError: (m: string | null) => void }) {
+function FilePickButton({ testID, picked, onPicked, onError, offline }: { testID: string; picked: { id: string; file: PickedFile } | null; onPicked: (v: { id: string; file: PickedFile } | null) => void; onError: (m: string | null) => void; offline?: boolean }) {
   const [busy, setBusy] = useState(false);
   const pick = async (camera = false) => {
     onError(null);
+    let f: PickedFile | null = null;
     try {
-      const f = await pickFile('imageOrPdf', camera);
+      f = await pickFile('imageOrPdf', camera);
       if (!f) return;
       setBusy(true);
       const up = await uploadFile(f);
       onPicked({ id: up.id, file: f });
     } catch (e) {
-      onError(errorMessage(e));
+      // sem internet: guarda no aparelho e sobe junto com o envio da fila (Fase 4)
+      if (offline && f && e instanceof ApiError && e.status === 0) onPicked({ id: holdFile(f), file: f });
+      else onError(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -42,7 +46,7 @@ function FilePickButton({ testID, picked, onPicked, onError }: { testID: string;
     <View style={styles.pick} testID={testID}>
       {picked?.file.previewUri ? <Image source={{ uri: picked.file.previewUri }} style={styles.thumb} resizeMode="cover" /> : <View style={[styles.thumb, styles.thumbPh]}><Text style={{ fontSize: 24 }}>{picked ? '📄' : '📎'}</Text></View>}
       <View style={{ flex: 1, gap: 6, minWidth: 0 }}>
-        <Text style={{ color: picked ? colors.success : colors.textMuted, fontWeight: '700' }} numberOfLines={2}>{picked ? `✓ ${picked.file.name}` : 'Nenhum arquivo selecionado (imagem ou PDF, até 10 MB)'}</Text>
+        <Text style={{ color: picked ? colors.success : colors.textMuted, fontWeight: '700' }} numberOfLines={2}>{picked ? `${isLocalFileRef(picked.id) ? '📴 Guardado no aparelho: ' : '✓ '}${picked.file.name}` : 'Nenhum arquivo selecionado (imagem ou PDF, até 10 MB)'}</Text>
         <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
           <Button size="sm" icon="📎" title={picked ? 'Trocar arquivo' : 'Escolher arquivo'} loading={busy} onPress={() => void pick(false)} />
           {Platform.OS !== 'web' ? <Button size="sm" variant="secondary" icon="📸" title="Câmera" onPress={() => void pick(true)} /> : null}
@@ -182,10 +186,21 @@ export function ClientDocuments({ clientId }: { clientId: string }) {
     setRBusy(true);
     setRErr(null);
     try {
-      const r = await api.receipts.create(clientId, { fileId: rFile.id, sentAt: sent, informedValueCents: rValue, notes: rNotes.trim() || null });
-      toast(r.autoLinked && r.payment ? `Comprovante anexado e vinculado ao pagamento pendente do empréstimo #${r.payment.loanCode}` : 'Comprovante anexado - aguardando conferência');
+      const q = await submitOrQueue<ClientReceiptDTO>({
+        kind: 'receipt',
+        label: `Comprovante do cliente${rValue ? ` de ${brl(rValue)}` : ''} (${rFile.file.name})`,
+        path: `/clients/${encodeURIComponent(clientId)}/receipts`,
+        body: { fileId: rFile.id, sentAt: sent, informedValueCents: rValue, notes: rNotes.trim() || null },
+        fileFields: ['fileId'],
+        meta: { clientId },
+      });
       setRecOpen(false);
-      await recs.reload();
+      if (q.queued) toast(QUEUED_MESSAGE, 'info');
+      else {
+        const r = q.data;
+        toast(r.autoLinked && r.payment ? `Comprovante anexado e vinculado ao pagamento pendente do empréstimo #${r.payment.loanCode}` : 'Comprovante anexado - aguardando conferência');
+        await recs.reload();
+      }
     } catch (e) {
       setRErr(errorMessage(e));
     } finally {
@@ -295,7 +310,7 @@ export function ClientDocuments({ clientId }: { clientId: string }) {
         footer={<><Button title="Cancelar" variant="secondary" onPress={() => setRecOpen(false)} /><Button testID="creceipt-submit" title="Anexar" variant="success" loading={rBusy} onPress={() => void submitReceipt()} /></>}>
         <Notice tone="info" text="Use para guardar o comprovante que o cliente mandou pelo WhatsApp. Para lançar o pagamento, use 'Lançar recibo' no empréstimo." />
         <Field label="Comprovante" required>
-          <FilePickButton testID="creceipt-file" picked={rFile} onPicked={setRFile} onError={setRErr} />
+          <FilePickButton testID="creceipt-file" picked={rFile} onPicked={setRFile} onError={setRErr} offline />
         </Field>
         <Input testID="creceipt-date" label="Data em que o cliente enviou" required mask="date" value={rDate} onChangeText={setRDate} placeholder="dd/mm/aaaa" />
         <MoneyInput testID="creceipt-value" label="Valor informado (opcional)" value={rValue} onChange={setRValue} />

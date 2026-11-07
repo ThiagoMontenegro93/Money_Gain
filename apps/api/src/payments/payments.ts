@@ -11,11 +11,13 @@ import {
   Param,
   Post,
   Query,
+  UseInterceptors,
 } from '@nestjs/common';
 import { expectedAmount, formatBRL, isValidISODate, planPayment, diffDays } from '@lendcontrol/core';
 import { PaymentStatus, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { AuditService } from '../common/audit.service';
+import { IdempotencyInterceptor } from '../common/idempotency.interceptor';
 import { AuthUser, CurrentUser, isAdmin, Roles } from '../common/auth';
 import { PrismaService } from '../common/prisma.service';
 import { d, dt, iso, num, today, ZodPipe } from '../common/util';
@@ -275,6 +277,7 @@ export class PaymentsController {
   constructor(private payments: PaymentsService) {}
 
   @Post()
+  @UseInterceptors(IdempotencyInterceptor)
   create(@CurrentUser() u: AuthUser, @Body(new ZodPipe(createSchema)) b: z.infer<typeof createSchema>) {
     return this.payments.create(u, b);
   }

@@ -52,3 +52,11 @@ Pontos em que a especificação deixava margem e a escolha feita:
     editados em Configurações > Backup.
 27. Status AUTO da planilha segue a fórmula da spec (8+ BOM, 5+ REGULAR, 2+ RUIM, senão PERDA); a coluna Status traz a
     classificação do sistema (PERDA só com 180 dias sem pagar). Cores: verde, amarelo, laranja e preto.
+
+## Fase 4
+28. **Offline** cobre as ações de rua do funcionário (recibo, cobrança, cadastro novo, comprovante do cliente). Edição de
+    cliente existente e documentos exigem internet. As validações do servidor rodam no envio; o que falhar aparece em
+    "Envios pendentes" com o motivo.
+29. **Idempotência** por cabeçalho `Idempotency-Key` (por usuário, 7 dias) nas rotas de criação usadas pela fila.
+30. A fila offline sobrevive ao logout e é retomada no próximo login do mesmo usuário; o cache de leitura é apagado no logout.
+31. Sem service worker: no navegador, recarregar a página sem internet não abre o app (no celular funciona).

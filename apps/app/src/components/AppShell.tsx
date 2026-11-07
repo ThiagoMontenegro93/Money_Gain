@@ -8,6 +8,7 @@ import { ROLE_LABEL, useAuth } from '../auth/AuthContext';
 import { useLayout } from '../hooks/useLayout';
 import { colors } from '../theme';
 import { dateTimeBR } from '../utils/format';
+import { OfflineBar } from './OfflineBar';
 import { Button, Empty, Modal } from './ui';
 
 interface NavItem {
@@ -147,6 +148,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Text style={{ color: colors.textMuted, fontWeight: '600' }}>{user?.email}</Text>
             </View>
           </View>
+          <OfflineBar />
           <View style={{ flex: 1 }}>{children}</View>
         </View>
       </View>
@@ -165,6 +167,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Pressable>
         </View>
       </View>
+      <OfflineBar />
       <View style={{ flex: 1 }}>{children}</View>
       <View style={[styles.tabbar, { paddingBottom: insets.bottom + 4 }]}>
         {tabs.map((n) => {

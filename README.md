@@ -45,12 +45,13 @@ O seed cria 6 clientes reais de teste cobrindo BOM, REGULAR, RUIM e PERDA.
 
 ```bash
 pnpm --filter @lendcontrol/core test   # 38 testes do motor, score, importador e mensagens
-pnpm --filter @lendcontrol/api test    # reaplica o seed e roda 49 testes ponta a ponta contra a API rodando (mock da Evolution API na porta 3999 e SMTP de teste na 2526)
+pnpm --filter @lendcontrol/api test    # reaplica o seed e roda 55 testes ponta a ponta contra a API rodando (mock da Evolution API na porta 3999 e SMTP de teste na 2526)
 # Com a API servindo o build web em http://localhost:3000:
 pnpm --filter @lendcontrol/app test:responsive  # telas × 5 larguras (1440, 1280, 768, 390, 360) × 3 perfis: sem estouro horizontal, sem erro de console
 pnpm --filter @lendcontrol/app test:flow        # fluxo real: funcionário no celular importa WhatsApp → cadastra → empresta → lança recibo; dono aprova no desktop
 pnpm --filter @lendcontrol/app test:fase2       # WhatsApp (provedor, template, cobrança firme), documentos com marca d'água, comprovantes, PDFs
 pnpm --filter @lendcontrol/app test:fase3       # e-mail do backup, baixar, criptografar, validar e restaurar pela tela
+pnpm --filter @lendcontrol/app test:offline     # funcionário sem internet: lança recibo e cobrança, volta a rede, sincroniza sem duplicar
 ```
 Screenshots das telas e dos fluxos ficam em `docs/screenshots/`.
 
@@ -99,7 +100,16 @@ Decisões em que interpretei a especificação estão em `docs/DECISOES.md`.
 - **E-mail** do backup editável em Configurações (principal + adicionais, ativar/desativar, testar envio) e
   **exportação criptografada** com senha.
 
-## Roadmap
+## Fase 4 (entregue)
 
-- **Fase 4**: offline-first no app (fila de sincronização), builds EAS (APK/IPA), deploy (Docker + Postgres gerenciado),
-  monitoramento e backups do banco.
+- **Modo offline**: sem sinal, o app mostra os últimos dados com o aviso "Offline — dados de dd/mm hh:mm" e guarda no
+  aparelho recibos (com a foto do comprovante), tentativas de cobrança, cadastros novos e comprovantes de cliente.
+  Quando a internet volta, envia sozinho; cada envio tem chave de idempotência, então nada é duplicado. Recibos continuam
+  indo para aprovação (nada é baixado offline).
+- **Produção**: imagem Docker única (app web + API), HTTPS automático, cópia diária do banco, criação do dono no primeiro
+  acesso, `GET /api/health` para monitoramento e perfis de build Android/iPhone (EAS). Passo a passo em `docs/DEPLOY.md`.
+
+## Próximos passos (dependem de contas do dono)
+
+- Servidor/domínio para o deploy, servidor de e-mail (SMTP) e provedor de WhatsApp.
+- Conta Expo para gerar o APK/AAB e contas Google Play/Apple para publicar nas lojas.
