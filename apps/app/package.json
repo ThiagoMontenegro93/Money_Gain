@@ -14,6 +14,7 @@
     "test:flow": "node e2e/flow.js ../../docs/screenshots",
     "test:fase2": "node e2e/fase2.js ../../docs/screenshots",
     "test:fase3": "node e2e/fase3.js ../../docs/screenshots",
+    "test:opcoes": "node e2e/opcoes.js ../../docs/screenshots",
     "test:offline": "node e2e/offline.js ../../docs/screenshots"
   },
   "dependencies": {

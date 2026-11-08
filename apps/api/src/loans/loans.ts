@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Get, Injectable, NotFoundException, Param, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Injectable, NotFoundException, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import {
   createLoanWithProjection,
   CreateLoanInput,
@@ -9,9 +9,10 @@ import {
 import { LoanStatus, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { AuditService } from '../common/audit.service';
-import { AuthUser, CurrentUser, isAdmin } from '../common/auth';
+import { AuthUser, CurrentUser, isAdmin, Roles } from '../common/auth';
+import { SettingsService } from '../common/settings.service';
 import { PrismaService } from '../common/prisma.service';
-import { d, dt, today, ZodPipe } from '../common/util';
+import { d, dt, num, today, ZodPipe } from '../common/util';
 import { ClientsService, creditLockFor } from '../clients/clients.service';
 import { ScoreService } from '../clients/score.service';
 import { loanInclude, loanSummary, loanViews, paymentDTO, paymentInclude, toEngineInstallment, toEngineLoan } from './loan-mapper';
@@ -22,10 +23,23 @@ const loanBase = z.object({
   method: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']),
   principalCents: z.number().int().positive().max(1_000_000_000),
   ratePercent: z.number().min(0).max(1000),
-  multaDiaPercent: z.number().min(0).max(100),
+  multaDiaPercent: z.number().min(0).max(100).optional(),
   releaseDate: isoDate,
   installmentsCount: z.number().int().min(1).max(360).optional(),
+  allowAmortization: z.boolean().optional(),
+  allowLateFee: z.boolean().optional(),
 });
+
+/** Padrão geral para novos empréstimos (Configurações > Empréstimos). */
+export interface LoanDefaults {
+  allowAmortization: boolean;
+  allowLateFee: boolean;
+  multaDiaPercent: number;
+}
+export const LOAN_DEFAULTS_KEY = 'loans.defaults';
+export const LOAN_DEFAULTS: LoanDefaults = { allowAmortization: true, allowLateFee: true, multaDiaPercent: 1 };
+const defaultsSchema = z.object({ allowAmortization: z.boolean(), allowLateFee: z.boolean(), multaDiaPercent: z.number().min(0).max(100) });
+const optionsSchema = z.object({ allowAmortization: z.boolean().optional(), allowLateFee: z.boolean().optional(), multaDiaPercent: z.number().min(0).max(100).optional() });
 const createSchema = loanBase.extend({
   clientId: z.string(),
   lenderUserId: z.string().optional(),
@@ -40,13 +54,62 @@ export class LoansService {
     private clients: ClientsService,
     private score: ScoreService,
     private audit: AuditService,
+    private settings: SettingsService,
   ) {}
+
+  defaults() {
+    return this.settings.get<LoanDefaults>(LOAN_DEFAULTS_KEY, LOAN_DEFAULTS);
+  }
+
+  async saveDefaults(u: AuthUser, b: LoanDefaults) {
+    const saved = await this.settings.set(LOAN_DEFAULTS_KEY, b);
+    await this.audit.log(u.id, 'UPDATE_LOAN_DEFAULTS', 'Setting', LOAN_DEFAULTS_KEY, { ...b });
+    return saved;
+  }
+
+  /** Completa as opções não informadas com o padrão geral; sem multa, a % diária fica zerada. */
+  private async withDefaults<T extends z.infer<typeof loanBase>>(b: T): Promise<T & { multaDiaPercent: number; allowAmortization: boolean; allowLateFee: boolean }> {
+    const def = await this.defaults();
+    const allowLateFee = b.allowLateFee ?? def.allowLateFee;
+    return {
+      ...b,
+      allowAmortization: b.allowAmortization ?? def.allowAmortization,
+      allowLateFee,
+      multaDiaPercent: allowLateFee ? (b.multaDiaPercent ?? def.multaDiaPercent) : 0,
+    };
+  }
+
+  /** Muda as opções de um empréstimo já liberado (ex.: perdoar a multa) e atualiza as parcelas em aberto. */
+  async updateOptions(u: AuthUser, id: string, b: z.infer<typeof optionsSchema>) {
+    const loan = await this.findOrThrow(u, id);
+    if (loan.status !== 'ATIVO' && loan.status !== 'PERDA') throw new BadRequestException('Empréstimo encerrado: opções não podem mais ser alteradas');
+    const allowLateFee = b.allowLateFee ?? loan.allowLateFee;
+    const data = {
+      allowAmortization: b.allowAmortization ?? loan.allowAmortization,
+      allowLateFee,
+      // a % fica guardada mesmo com a multa desligada, para religar sem perder o valor combinado
+      multaDiaPercent: b.multaDiaPercent ?? (num(loan.multaDiaPercent) || (allowLateFee ? (await this.defaults()).multaDiaPercent : 0)),
+    };
+    const asOf = today();
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.loan.update({ where: { id }, data, include: { installments: true } });
+      const eLoan = toEngineLoan(updated);
+      for (const i of updated.installments.filter((x) => x.status === 'PENDENTE')) {
+        const v = viewInstallment(toEngineInstallment(i), eLoan, asOf);
+        await tx.installment.update({ where: { id: i.id }, data: { updatedValue: d(v.updatedCents), diasAtraso: v.diasAtraso, multaDiaPercent: allowLateFee ? data.multaDiaPercent : 0 } });
+      }
+      await this.audit.log(u.id, 'UPDATE_OPTIONS', 'Loan', id, { before: { allowAmortization: loan.allowAmortization, allowLateFee: loan.allowLateFee, multaDiaPercent: num(loan.multaDiaPercent) }, after: data }, tx);
+    });
+    await this.score.recompute(loan.clientId);
+    return this.detail(u, id);
+  }
 
   scope(u: AuthUser): Prisma.LoanWhereInput {
     return isAdmin(u) ? {} : { lenderUserId: u.id };
   }
 
-  preview(b: z.infer<typeof loanBase>) {
+  async preview(raw: z.infer<typeof loanBase>) {
+    const b = await this.withDefaults(raw);
     const created = createLoanWithProjection(b as CreateLoanInput);
     return {
       dueDate: created.dueDate,
@@ -64,7 +127,8 @@ export class LoansService {
     return creditLockFor(cl, r);
   }
 
-  async create(u: AuthUser, b: z.infer<typeof createSchema>) {
+  async create(u: AuthUser, raw: z.infer<typeof createSchema>) {
+    const b = await this.withDefaults(raw);
     const lock = await this.creditCheck(u, b.clientId);
     if (lock.level === 'BLOCKED') throw new BadRequestException({ message: `${lock.title}. ${lock.message}`, code: 'CREDIT_BLOCKED' });
     if (lock.level === 'WARNING' && !b.riskAcknowledged)
@@ -102,6 +166,8 @@ export class LoansService {
           principal: d(b.principalCents),
           interestRate: b.ratePercent,
           multaDiaPercent: b.multaDiaPercent,
+          allowAmortization: b.allowAmortization,
+          allowLateFee: b.allowLateFee,
           method: b.method,
           type: b.type,
           installmentsCount: b.type === 'FIXED_INSTALLMENT' ? b.installmentsCount : null,
@@ -130,7 +196,7 @@ export class LoansService {
         data: { userId: lenderId, type: 'SAIDA_EMPRESTIMO', amount: d(-b.principalCents), description: `Empréstimo #${l.code} liberado`, loanId: l.id },
       });
       await tx.client.updateMany({ where: { id: b.clientId, responsibleUserId: null }, data: { responsibleUserId: lenderId } });
-      await this.audit.log(u.id, 'CREATE', 'Loan', l.id, { principalCents: b.principalCents, lenderId, riskAcknowledged: !!b.riskAcknowledged }, tx);
+      await this.audit.log(u.id, 'CREATE', 'Loan', l.id, { principalCents: b.principalCents, lenderId, riskAcknowledged: !!b.riskAcknowledged, allowAmortization: b.allowAmortization, allowLateFee: b.allowLateFee }, tx);
       return l;
     });
     await this.score.recompute(b.clientId);
@@ -181,6 +247,23 @@ export class LoansController {
   @Post('preview')
   preview(@Body(new ZodPipe(loanBase)) b: z.infer<typeof loanBase>) {
     return this.loans.preview(b);
+  }
+
+  @Get('settings')
+  defaults() {
+    return this.loans.defaults();
+  }
+
+  @Roles('SUPER_ADMIN')
+  @Put('settings')
+  saveDefaults(@CurrentUser() u: AuthUser, @Body(new ZodPipe(defaultsSchema)) b: LoanDefaults) {
+    return this.loans.saveDefaults(u, b);
+  }
+
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  @Patch(':id/options')
+  options(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body(new ZodPipe(optionsSchema)) b: z.infer<typeof optionsSchema>) {
+    return this.loans.updateOptions(u, id, b);
   }
 
   @Get('credit-check')

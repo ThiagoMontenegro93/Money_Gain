@@ -163,3 +163,33 @@ describe('outros métodos e Tabela Price', () => {
     expect(() => createLoanWithProjection({ type: 'INTEREST_ONLY', method: 'MONTHLY', principalCents: 0, ratePercent: 1, multaDiaPercent: 0, releaseDate: '2026-10-30' })).toThrow(/principal/);
   });
 });
+
+describe('opções do empréstimo: amortização e multa diária', () => {
+  const opt = (o: { allowAmortization?: boolean; allowLateFee?: boolean }) =>
+    createLoanWithProjection({ type: 'INTEREST_ONLY', method: 'MONTHLY', principalCents: 100_000, ratePercent: 10, multaDiaPercent: 1, releaseDate: '2026-10-30', ...o });
+
+  it('padrão: aceita amortização e cobra multa', () => {
+    const s = opt({});
+    expect(s.loan.allowAmortization).toBe(true);
+    expect(s.loan.allowLateFee).toBe(true);
+    expect(viewInstallment(s.installments[0], s.loan, '2026-12-10').updatedCents).toBe(121_000); // 10 dias × 1%
+  });
+
+  it('sem amortização: recusa AMORTIZACAO, mas juros e quitação seguem normais', () => {
+    const s = opt({ allowAmortization: false });
+    expect(() => planPayment(s.loan, s.installments, { type: 'AMORTIZACAO', amountCents: 40_000, asOf: '2026-11-15' })).toThrow(/não admite amortização/);
+    expect(planPayment(s.loan, s.installments, { type: 'JUROS', amountCents: 10_000, asOf: '2026-11-15' }).allocation.interestCents).toBe(10_000);
+    expect(planPayment(s.loan, s.installments, { type: 'QUITACAO', amountCents: 110_000, asOf: '2026-11-15' }).loanChanges.status).toBe('QUITADO');
+  });
+
+  it('sem multa: atraso não aumenta o valor (só juros do mês) e quitação atrasada não soma multa', () => {
+    const s = opt({ allowLateFee: false });
+    const v = viewInstallment(s.installments[0], s.loan, '2026-12-10');
+    expect(v.diasAtraso).toBe(10);
+    expect(v.displayStatus).toBe('ATRASADA');
+    expect(v.updatedCents).toBe(110_000);
+    expect(simulatePayoff(s.loan, s.installments, '2026-12-10')!.amountCents).toBe(110_000);
+    const plan = planPayment(s.loan, s.installments, { type: 'JUROS', amountCents: 10_000, asOf: '2026-12-10' });
+    expect(plan.allocation.fineCents).toBe(0);
+  });
+});

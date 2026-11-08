@@ -60,3 +60,9 @@ Pontos em que a especificação deixava margem e a escolha feita:
 29. **Idempotência** por cabeçalho `Idempotency-Key` (por usuário, 7 dias) nas rotas de criação usadas pela fila.
 30. A fila offline sobrevive ao logout e é retomada no próximo login do mesmo usuário; o cache de leitura é apagado no logout.
 31. Sem service worker: no navegador, recarregar a página sem internet não abre o app (no celular funciona).
+
+## Opções por empréstimo (pedido de 08/11)
+32. Cada empréstimo guarda se aceita amortização e se cobra multa diária por atraso; o padrão geral fica em
+    Configurações > Empréstimos (só o dono altera). Desligar a multa num empréstimo já liberado (gestor/dono) recalcula
+    as parcelas em aberto na hora e fica auditado; a % combinada é guardada para religar depois.
+33. Sem multa, o atraso continua contando para o score e para a régua de cobrança; só o valor não aumenta.
