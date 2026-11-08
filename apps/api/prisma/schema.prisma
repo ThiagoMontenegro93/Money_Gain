@@ -239,6 +239,10 @@ model Loan {
   principal       Decimal    @db.Decimal(14, 2)
   interestRate    Decimal    @db.Decimal(9, 4)
   multaDiaPercent Decimal    @default(0) @db.Decimal(9, 4)
+  /// Aceita amortização parcial do principal
+  allowAmortization Boolean  @default(true)
+  /// Cobra multa % ao dia por atraso (desligado: atraso só conta para o score)
+  allowLateFee    Boolean    @default(true)
   method          LoanMethod
   type            LoanType
   installmentsCount Int?

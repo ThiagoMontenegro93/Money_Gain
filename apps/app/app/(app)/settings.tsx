@@ -17,7 +17,7 @@ import { useLayout } from '@/hooks/useLayout';
 import { colors } from '@/theme';
 import { MESSAGE_STATUS_LABEL, WA_PROVIDER_LABEL } from '@/utils/format';
 
-type TabKey = 'perfil' | 'whatsapp' | 'templates' | 'mensagens' | 'backup';
+type TabKey = 'perfil' | 'emprestimos' | 'whatsapp' | 'templates' | 'mensagens' | 'backup';
 
 // ---------------------------------------------------------------------------
 // Meu perfil
@@ -410,6 +410,65 @@ function TemplatesTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Empréstimos: padrão geral de amortização e multa por atraso
+// ---------------------------------------------------------------------------
+
+function LoanDefaultsTab() {
+  const { hasRole } = useAuth();
+  const toast = useToast();
+  const editable = hasRole('SUPER_ADMIN');
+  const { data, error, loading, reload } = useAsync(() => api.loans.defaults(), []);
+  const [fee, setFee] = useState(true);
+  const [amort, setAmort] = useState(true);
+  const [fine, setFine] = useState('1');
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!data) return;
+    setFee(data.allowLateFee);
+    setAmort(data.allowAmortization);
+    setFine(String(data.multaDiaPercent).replace('.', ','));
+  }, [data]);
+  if (loading && !data) return <Loading />;
+  if (error) return <ErrorState message={error} onRetry={reload} />;
+  const save = async () => {
+    const n = Number(fine.replace(',', '.'));
+    if (fee && !(n >= 0 && n <= 100)) return setErr('Multa diária entre 0% e 100%');
+    setErr(null);
+    setBusy(true);
+    try {
+      await api.loans.saveDefaults({ allowLateFee: fee, allowAmortization: amort, multaDiaPercent: fee ? n : 0 });
+      toast('Padrão dos empréstimos salvo');
+      reload();
+    } catch (e) {
+      setErr(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card title="💰 Padrão para novos empréstimos" testID="loan-defaults-card">
+      <Text style={{ color: colors.textMuted, fontSize: 13, marginBottom: 12 }}>
+        Vale para os próximos empréstimos; em cada empréstimo dá para mudar na hora de criar. Empréstimos já liberados mantêm as próprias opções (o gestor pode perdoar a multa no detalhe do empréstimo).
+      </Text>
+      <View style={{ gap: 10 }}>
+        <Checkbox testID="def-late-fee" checked={fee} onChange={editable ? setFee : () => {}} label="Cobrar multa diária por atraso, além dos juros do período" />
+        {fee ? <Input testID="def-fine" label="Multa diária padrão %" mask="decimal" value={fine} onChangeText={setFine} editable={editable} style={{ maxWidth: 260 }} hint="ValorAtual = Parcela × (1 + %multa × dias)" /> : null}
+        <Checkbox testID="def-amortization" checked={amort} onChange={editable ? setAmort : () => {}} label="Aceitar amortização (abater parte do principal)" />
+      </View>
+      <InlineError message={err} />
+      {editable ? (
+        <View style={{ flexDirection: 'row', marginTop: 12 }}>
+          <Button testID="def-save" title="Salvar padrão" icon="💾" loading={busy} onPress={save} />
+        </View>
+      ) : (
+        <Notice tone="info" text="Somente o dono altera o padrão." />
+      )}
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 
 export default function Settings() {
   const { hasRole } = useAuth();
@@ -418,6 +477,7 @@ export default function Settings() {
   const isOwner = hasRole('SUPER_ADMIN');
   const tabs: { key: TabKey; label: string; icon: string }[] = [
     { key: 'perfil', label: 'Meu perfil', icon: '👤' },
+    ...(isAdmin ? [{ key: 'emprestimos' as const, label: 'Empréstimos', icon: '💰' }] : []),
     ...(isAdmin ? [{ key: 'whatsapp' as const, label: 'WhatsApp', icon: '💬' }, { key: 'templates' as const, label: 'Templates', icon: '📝' }] : []),
     { key: 'mensagens', label: 'Mensagens', icon: '📨' },
     ...(isOwner ? [{ key: 'backup' as const, label: 'Backup', icon: '🗂️' }] : []),
@@ -435,6 +495,7 @@ export default function Settings() {
         <Tabs tabs={tabs} active={tab} onChange={setTab} />
       </View>
       {tab === 'perfil' ? <ProfileTab /> : null}
+      {tab === 'emprestimos' && isAdmin ? <LoanDefaultsTab /> : null}
       {tab === 'whatsapp' && isAdmin ? <WhatsAppTab /> : null}
       {tab === 'templates' && isAdmin ? <TemplatesTab /> : null}
       {tab === 'mensagens' ? (

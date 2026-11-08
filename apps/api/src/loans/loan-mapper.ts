@@ -22,6 +22,8 @@ export function toEngineLoan(l: Loan): EngineLoan {
     multaDiaPercent: num(l.multaDiaPercent),
     releaseDate: iso(l.releaseDate)!,
     status: l.status,
+    allowAmortization: l.allowAmortization,
+    allowLateFee: l.allowLateFee,
   };
 }
 
@@ -69,6 +71,8 @@ export function loanSummary(l: LoanWith, asOf: ISODate) {
     principalCents: c(l.principal),
     ratePercent: num(l.interestRate),
     multaDiaPercent: num(l.multaDiaPercent),
+    allowAmortization: l.allowAmortization,
+    allowLateFee: l.allowLateFee,
     installmentsCount: l.installmentsCount,
     releaseDate: iso(l.releaseDate)!,
     dueDate: iso(l.dueDate)!,

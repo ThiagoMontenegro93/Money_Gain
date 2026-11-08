@@ -17,7 +17,7 @@ const OUT = process.argv[2];
     ['client-edit', `/clients/${byCls('BOM')}/edit`], ['loans', '/loans'], ['loan-new', '/loans/new'],
     ['loan-detail', `/loans/${loans.find((l) => l.overdueCount > 0).id}`], ['approvals', '/approvals'], ['team', '/team'], ['settings', '/settings'],
     // Fase 2
-    ['settings-whatsapp', '/settings?tab=whatsapp'], ['settings-templates', '/settings?tab=templates'], ['messages-log', '/settings?tab=mensagens'], ['settings-backup', '/settings?tab=backup'],
+    ['settings-whatsapp', '/settings?tab=whatsapp'], ['settings-templates', '/settings?tab=templates'], ['messages-log', '/settings?tab=mensagens'], ['settings-backup', '/settings?tab=backup'], ['settings-emprestimos', '/settings?tab=emprestimos'],
     ['client-cobranca', `/clients/${byCls('RUIM')}?tab=2`], ['client-docs', `/clients/${byCls('BOM')}?tab=5`], ['client-docs-own', `/clients/${carlosClient}?tab=5`],
   ];
   const vps = [['desktop', 1440, 900], ['laptop', 1280, 800], ['tablet', 768, 1024], ['mobile', 390, 844], ['small', 360, 740]];

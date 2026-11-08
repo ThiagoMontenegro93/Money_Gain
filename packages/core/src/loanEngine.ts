@@ -44,7 +44,14 @@ export interface EngineLoan {
   multaDiaPercent: number;
   releaseDate: ISODate;
   status: LoanStatus;
+  /** Aceita amortização parcial do principal (padrão: sim). */
+  allowAmortization?: boolean;
+  /** Cobra multa % ao dia sobre parcelas vencidas (padrão: sim). Desligado, o atraso só conta para o score. */
+  allowLateFee?: boolean;
 }
+
+/** Multa diária efetiva: zero quando o empréstimo não admite multa por atraso. */
+export const effectiveFinePercent = (loan: Pick<EngineLoan, 'multaDiaPercent' | 'allowLateFee'>) => (loan.allowLateFee === false ? 0 : loan.multaDiaPercent);
 
 export interface EngineInstallment {
   number: number;
@@ -97,6 +104,8 @@ export interface CreateLoanInput {
   releaseDate: ISODate;
   /** Obrigatório para FIXED_INSTALLMENT. */
   installmentsCount?: number;
+  allowAmortization?: boolean;
+  allowLateFee?: boolean;
 }
 
 export interface CreatedLoan {
@@ -132,6 +141,8 @@ export function createLoanWithProjection(input: CreateLoanInput): CreatedLoan {
     multaDiaPercent: input.multaDiaPercent,
     releaseDate: input.releaseDate,
     status: 'ATIVO',
+    allowAmortization: input.allowAmortization ?? true,
+    allowLateFee: input.allowLateFee ?? true,
   };
 
   if (input.type === 'INTEREST_ONLY') {
@@ -220,8 +231,8 @@ export function viewInstallment(inst: EngineInstallment, loan: EngineLoan, asOf:
   return {
     ...inst,
     diasAtraso: dias,
-    updatedCents: open ? applyLateFee(inst.originalCents, loan.multaDiaPercent, dias) : inst.originalCents,
-    interestUpdatedCents: open ? applyLateFee(inst.interestCents, loan.multaDiaPercent, dias) : inst.interestCents,
+    updatedCents: open ? applyLateFee(inst.originalCents, effectiveFinePercent(loan), dias) : inst.originalCents,
+    interestUpdatedCents: open ? applyLateFee(inst.interestCents, effectiveFinePercent(loan), dias) : inst.interestCents,
     displayStatus,
   };
 }
@@ -522,6 +533,8 @@ export function onPayFixedInstallment(loan: EngineLoan, installments: EngineInst
 /** Amortização parcial do principal: recalcula juros das parcelas em aberto. */
 export function onAmortize(loan: EngineLoan, installments: EngineInstallment[], p: PaymentInput): EnginePlan {
   assertActive(loan);
+  if (loan.allowAmortization === false)
+    throw new LoanEngineError('AMORTIZATION_DISABLED', 'Este empréstimo não admite amortização: receba juros, parcela ou quitação');
   const open = openInstallments(installments);
   if (!open.length) throw new LoanEngineError('NO_OPEN_INSTALLMENT', 'Não há parcelas em aberto');
   if (open.some((i) => daysLate(i.dueDate, p.asOf) > 0))

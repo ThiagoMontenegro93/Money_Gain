@@ -10,8 +10,9 @@ import { InstallmentTimeline } from '@/components/InstallmentTimeline';
 import { PaymentList } from '@/components/PaymentList';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
-import { Badge, Button, Card, ErrorState, InlineError, Input, KV, Loading, Modal, MoneyInput, Notice, ScoreBadge, Segmented, StatusChip, Stack } from '@/components/ui';
+import { Badge, Button, Card, Checkbox, ErrorState, InlineError, Input, KV, Loading, Modal, MoneyInput, Notice, ScoreBadge, Segmented, StatusChip, Stack } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
+import { useAuth } from '@/auth/AuthContext';
 import { QUEUED_MESSAGE, submitOrQueue, useOutbox } from '@/offline/outbox';
 import { useLayout } from '@/hooks/useLayout';
 import { colors } from '@/theme';
@@ -45,6 +46,8 @@ export default function LoanDetailScreen() {
   const { isDesktop } = useLayout();
   const { data: loan, error, loading, reload } = useAsync<LoanDetail>(() => api.loans.get(String(id)), [id]);
   const outbox = useOutbox();
+  const { hasRole } = useAuth();
+  const [optBusy, setOptBusy] = useState(false);
 
   const [simOpen, setSimOpen] = useState(false);
   const [simDate, setSimDate] = useState(isoToBR(todayISO()));
@@ -63,10 +66,11 @@ export default function LoanDetailScreen() {
   const [payErr, setPayErr] = useState<string | null>(null);
   const [payBusy, setPayBusy] = useState(false);
 
-  const payTypes: { value: PaymentType; label: string }[] =
+  const payTypes: { value: PaymentType; label: string }[] = (
     loan?.type === 'FIXED_INSTALLMENT'
       ? [{ value: 'PARCELA', label: 'PARCELA' }, { value: 'QUITACAO', label: 'QUITAÇÃO' }, { value: 'AMORTIZACAO', label: 'AMORTIZAÇÃO' }]
-      : [{ value: 'JUROS', label: 'JUROS' }, { value: 'QUITACAO', label: 'QUITAÇÃO' }, { value: 'AMORTIZACAO', label: 'AMORTIZAÇÃO' }];
+      : [{ value: 'JUROS', label: 'JUROS' }, { value: 'QUITACAO', label: 'QUITAÇÃO' }, { value: 'AMORTIZACAO', label: 'AMORTIZAÇÃO' }]
+  ).filter((t) => t.value !== 'AMORTIZACAO' || loan?.allowAmortization !== false) as { value: PaymentType; label: string }[];
 
   // atualiza a cotação para a data do pagamento (valor sugerido)
   useEffect(() => {
@@ -89,6 +93,18 @@ export default function LoanDetailScreen() {
   if (!loan) return null;
 
   const active = loan.status === 'ATIVO' || loan.status === 'PERDA';
+  const changeOptions = async (b: { allowLateFee?: boolean; allowAmortization?: boolean }, msg: string) => {
+    setOptBusy(true);
+    try {
+      await api.loans.options(loan.id, b);
+      toast(msg);
+      await reload();
+    } catch (e) {
+      toast(errorMessage(e), 'error');
+    } finally {
+      setOptBusy(false);
+    }
+  };
   const pending = loan.payments.find((p) => p.status === 'AGUARDANDO_APROVACAO');
   // recibo salvo no aparelho (sem internet) para este empréstimo, ainda não enviado
   const queued = outbox.items.find((i) => i.kind === 'payment' && i.meta?.loanId === loan.id && i.status === 'pending');
@@ -152,7 +168,7 @@ export default function LoanDetailScreen() {
   return (
     <Screen
       title={`Empréstimo #${loan.code}`}
-      subtitle={`${LOAN_TYPE_LABEL[loan.type] ?? loan.type} · ${loan.ratePercent}% ${METHOD_LABEL[loan.method as LoanMethod] ?? loan.method} · multa ${loan.multaDiaPercent}%/dia`}
+      subtitle={`${LOAN_TYPE_LABEL[loan.type] ?? loan.type} · ${loan.ratePercent}% ${METHOD_LABEL[loan.method as LoanMethod] ?? loan.method} · ${loan.allowLateFee ? `multa ${loan.multaDiaPercent}%/dia` : 'sem multa por atraso'}${loan.allowAmortization ? '' : ' · sem amortização'}`}
       maxWidth={1400}
       onRefresh={reload}
       refreshing={loading}
@@ -182,7 +198,16 @@ export default function LoanDetailScreen() {
             <KV k="Vencimento" v={dateBR(loan.dueDate)} />
             {loan.installmentsCount ? <KV k="Parcelas" v={String(loan.installmentsCount)} /> : null}
             <KV k="Dias sem pagar" v={String(loan.diasSemPagar)} />
+            <KV k="Multa por atraso" v={loan.allowLateFee ? `${loan.multaDiaPercent}% ao dia` : 'Não cobra'} />
+            <KV k="Amortização" v={loan.allowAmortization ? 'Aceita' : 'Não aceita'} />
           </View>
+          {hasRole('ADMIN', 'SUPER_ADMIN') && active ? (
+            <View testID="loan-options-admin" style={styles.optionsBox}>
+              <Checkbox testID="opt-late-fee" checked={loan.allowLateFee} onChange={(v) => void changeOptions({ allowLateFee: v }, v ? 'Multa por atraso ligada' : 'Multa por atraso perdoada: parcelas voltam ao valor original')} label="Cobrar multa diária por atraso" />
+              <Checkbox testID="opt-amortization" checked={loan.allowAmortization} onChange={(v) => void changeOptions({ allowAmortization: v }, v ? 'Amortização liberada' : 'Amortização bloqueada')} label="Aceitar amortização" />
+              {optBusy ? <Text style={{ color: colors.textMuted, fontSize: 12 }}>Salvando…</Text> : null}
+            </View>
+          ) : null}
           {loan.notes ? <KV k="Observações" v={loan.notes} /> : null}
         </Card>
         <Card title="Hoje" style={{ flex: 1 }}>
@@ -257,6 +282,7 @@ export default function LoanDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  optionsBox: { gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border },
   row: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   kvRow: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 18 },
   link: { color: '#93C5FD', fontWeight: '800', fontSize: 15 },

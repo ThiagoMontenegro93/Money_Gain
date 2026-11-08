@@ -167,6 +167,8 @@ export interface CreateLoanBody {
   multaDiaPercent: number;
   releaseDate: string;
   installmentsCount?: number;
+  allowAmortization?: boolean;
+  allowLateFee?: boolean;
   riskAcknowledged?: boolean;
   notes?: string;
 }
@@ -189,6 +191,8 @@ export interface LoanSummary {
   principalCents: number;
   ratePercent: number;
   multaDiaPercent: number;
+  allowAmortization: boolean;
+  allowLateFee: boolean;
   releaseDate: string;
   dueDate: string;
   status: LoanStatus;
@@ -473,3 +477,7 @@ export interface RestoreResult {
   message: string; safetyBackupId: string; counts: Record<string, number>;
   offlinePaymentsCreated: string[]; offlinePaymentsSkipped: string[]; reloginRequired: boolean;
 }
+
+/** Padrão geral para novos empréstimos. */
+export interface LoanDefaults { allowAmortization: boolean; allowLateFee: boolean; multaDiaPercent: number }
+export interface LoanOptionsBody { allowAmortization?: boolean; allowLateFee?: boolean; multaDiaPercent?: number }

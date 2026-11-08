@@ -45,12 +45,13 @@ O seed cria 6 clientes reais de teste cobrindo BOM, REGULAR, RUIM e PERDA.
 
 ```bash
 pnpm --filter @lendcontrol/core test   # 38 testes do motor, score, importador e mensagens
-pnpm --filter @lendcontrol/api test    # reaplica o seed e roda 55 testes ponta a ponta contra a API rodando (mock da Evolution API na porta 3999 e SMTP de teste na 2526)
+pnpm --filter @lendcontrol/api test    # reaplica o seed e roda 59 testes ponta a ponta contra a API rodando (mock da Evolution API na porta 3999 e SMTP de teste na 2526)
 # Com a API servindo o build web em http://localhost:3000:
 pnpm --filter @lendcontrol/app test:responsive  # telas × 5 larguras (1440, 1280, 768, 390, 360) × 3 perfis: sem estouro horizontal, sem erro de console
 pnpm --filter @lendcontrol/app test:flow        # fluxo real: funcionário no celular importa WhatsApp → cadastra → empresta → lança recibo; dono aprova no desktop
 pnpm --filter @lendcontrol/app test:fase2       # WhatsApp (provedor, template, cobrança firme), documentos com marca d'água, comprovantes, PDFs
 pnpm --filter @lendcontrol/app test:fase3       # e-mail do backup, baixar, criptografar, validar e restaurar pela tela
+pnpm --filter @lendcontrol/app test:opcoes      # padrão sem multa/sem amortização, novo empréstimo herda, gestor perdoa multa
 pnpm --filter @lendcontrol/app test:offline     # funcionário sem internet: lança recibo e cobrança, volta a rede, sincroniza sem duplicar
 ```
 Screenshots das telas e dos fluxos ficam em `docs/screenshots/`.
@@ -62,6 +63,8 @@ Screenshots das telas e dos fluxos ficam em `docs/screenshots/`.
 - **Projeção automática** (juros): R$1.000 em 30/10 a 10% → parcela 1 em 30/11 de R$1.100 (quitação prevista)
   + 3 projeções de R$100. Pagar só juros mantém o principal, a próxima parcela vira a quitação prevista e é criada
   uma nova projeção no fim (sempre 3 à frente). Quitar cancela as projeções: "Quitado em 30/12 - 3 parcelas de projeção removidas".
+- **Opções por empréstimo** (padrão em Configurações > Empréstimos): cobrar ou não multa diária por atraso e aceitar ou não
+  amortização. Sem multa, o atraso não aumenta o valor (só conta para o score); o gestor pode perdoar a multa depois.
 - **Multa diária**: `ValorAtual = Parcela × (1 + %multa × dias de atraso)`; atualizada pelo cron 00:00 (America/Sao_Paulo) e calculada na data do pagamento.
 - **Simular quitação**: vencidas com multa + saldo; se nada venceu, principal + juros do período corrente.
 - **Aprovação (V4)**: o recibo do funcionário (com comprovante PIX obrigatório) fica `AGUARDANDO_APROVACAO`; nada é baixado até

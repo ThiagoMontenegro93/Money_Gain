@@ -10,7 +10,7 @@ import { ClientPicker } from '@/components/ClientPicker';
 import { InstallmentTimeline } from '@/components/InstallmentTimeline';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
-import { Badge, Button, Card, InlineError, Input, KV, Loading, Modal, MoneyInput, Notice, ScoreBadge, Segmented, Select, Stack } from '@/components/ui';
+import { Badge, Button, Card, Checkbox, InlineError, Input, KV, Loading, Modal, MoneyInput, Notice, ScoreBadge, Segmented, Select, Stack } from '@/components/ui';
 import { useLayout } from '@/hooks/useLayout';
 import { useUsers } from '@/hooks/useUsers';
 import { colors } from '@/theme';
@@ -36,6 +36,19 @@ export default function NewLoan() {
   const [principal, setPrincipal] = useState<number | null>(null);
   const [rate, setRate] = useState(params.rate ? decimalText(Number(params.rate)) : '10');
   const [fine, setFine] = useState('1');
+  const [allowFee, setAllowFee] = useState(true);
+  const [allowAmort, setAllowAmort] = useState(true);
+  // padrão geral (Configurações > Empréstimos)
+  useEffect(() => {
+    api.loans
+      .defaults()
+      .then((d) => {
+        setAllowFee(d.allowLateFee);
+        setAllowAmort(d.allowAmortization);
+        setFine(decimalText(d.multaDiaPercent));
+      })
+      .catch(() => {});
+  }, []);
   const [method, setMethod] = useState<LoanMethod>('MONTHLY');
   const [type, setType] = useState<LoanType>('INTEREST_ONLY');
   const [count, setCount] = useState('6');
@@ -74,19 +87,21 @@ export default function NewLoan() {
       method,
       principalCents: principal ?? 0,
       ratePercent: rateN ?? 0,
-      multaDiaPercent: fineN ?? 0,
+      multaDiaPercent: allowFee ? (fineN ?? 0) : 0,
+      allowLateFee: allowFee,
+      allowAmortization: allowAmort,
       releaseDate: releaseISO ?? '',
       ...(type === 'FIXED_INSTALLMENT' ? { installmentsCount: countN } : {}),
       ...(lenderId && lenderId !== user?.id ? { lenderUserId: lenderId } : {}),
       ...(notes.trim() ? { notes: notes.trim() } : {}),
     }),
-    [type, method, principal, rateN, fineN, releaseISO, countN, lenderId, user?.id, notes],
+    [type, method, principal, rateN, fineN, allowFee, allowAmort, releaseISO, countN, lenderId, user?.id, notes],
   );
 
   const termsError = (): string | null => {
     if (!principal || principal <= 0) return 'Informe o valor principal';
     if (rateN == null || rateN < 0) return 'Informe a taxa %';
-    if (fineN == null || fineN < 0) return 'Informe a multa diária %';
+    if (allowFee && (fineN == null || fineN < 0)) return 'Informe a multa diária %';
     if (!releaseISO) return 'Data de liberação inválida (dd/mm/aaaa)';
     if (type === 'FIXED_INSTALLMENT' && (!Number.isInteger(countN) || countN < 1 || countN > 360)) return 'Número de parcelas entre 1 e 360';
     return null;
@@ -206,8 +221,14 @@ export default function NewLoan() {
           <Stack row={isDesktop} style={styles.row}>
             <MoneyInput testID="principal" label="Valor principal" required big value={principal} onChange={setPrincipal} style={{ flex: 1 }} />
             <Input testID="rate" label="Taxa % por período" required mask="decimal" value={rate} onChangeText={setRate} placeholder="10" style={{ flex: 1 }} hint={`${rate || '0'}% ${METHOD_LABEL[method].toLowerCase()}`} />
-            <Input testID="fine" label="Multa diária %" required mask="decimal" value={fine} onChangeText={setFine} placeholder="1" style={{ flex: 1 }} hint="ValorAtual = Parcela × (1 + %multa × dias)" />
+            {allowFee ? (
+              <Input testID="fine" label="Multa diária %" required mask="decimal" value={fine} onChangeText={setFine} placeholder="1" style={{ flex: 1 }} hint="ValorAtual = Parcela × (1 + %multa × dias)" />
+            ) : null}
           </Stack>
+          <View testID="loan-options" style={styles.options}>
+            <Checkbox testID="opt-late-fee" checked={allowFee} onChange={setAllowFee} label="Cobrar multa diária por atraso (além dos juros do período)" />
+            <Checkbox testID="opt-amortization" checked={allowAmort} onChange={setAllowAmort} label="Aceitar amortização (abater parte do principal)" />
+          </View>
           <Segmented testIDPrefix="method" label="Método" required value={method} onChange={setMethod} options={METHODS} />
           <Segmented testIDPrefix="type" label="Tipo" required value={type} onChange={setType} options={TYPES} />
           <Stack row={isDesktop} style={styles.row}>
@@ -235,7 +256,8 @@ export default function NewLoan() {
               <KV k="Funcionário" v={lender?.name ?? '—'} />
               <KV k="Principal" v={brl(principal)} />
               <KV k="Taxa" v={`${rate}% ${METHOD_LABEL[method]}`} />
-              <KV k="Multa diária" v={`${fine}%`} />
+              <KV k="Multa diária" v={allowFee ? `${fine}% ao dia` : 'Não cobra'} />
+              <KV k="Amortização" v={allowAmort ? 'Aceita' : 'Não aceita'} />
               <KV k="Tipo" v={TYPES.find((t) => t.value === type)!.label} />
               {type === 'FIXED_INSTALLMENT' ? <KV k="Parcelas" v={count} /> : null}
               <KV k="Liberação" v={release} />
@@ -317,6 +339,7 @@ export default function NewLoan() {
 }
 
 const styles = StyleSheet.create({
+  options: { gap: 10, marginTop: 4, marginBottom: 12 },
   steps: { flexDirection: 'row', gap: 8, marginBottom: 14, flexWrap: 'wrap' },
   step: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 12 },
   stepN: { color: '#FFF', width: 24, height: 24, borderRadius: 12, textAlign: 'center', lineHeight: 24, fontWeight: '900', overflow: 'hidden' },

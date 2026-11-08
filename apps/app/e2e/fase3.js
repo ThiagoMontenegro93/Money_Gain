@@ -93,7 +93,7 @@ const step = (m) => console.log('✓ ' + m);
     let last = 1;
     pay.eachRow((r, n) => { if (r.getCell(10).value) last = n; });
     const row = pay.getRow(last + 1);
-    row.getCell(1).value = new Date(); row.getCell(3).value = loan.code; row.getCell(4).value = 'JUROS'; row.getCell(5).value = quote.interestOnlyCents / 100;
+    row.getCell(1).value = new Date(new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }) + 'T00:00:00.000Z'); row.getCell(3).value = loan.code; row.getCell(4).value = 'JUROS'; row.getCell(5).value = quote.interestOnlyCents / 100;
     row.commit();
     const editedPath = path.join(tmp, 'backup-editado.xlsx');
     await wb.xlsx.writeFile(editedPath);
