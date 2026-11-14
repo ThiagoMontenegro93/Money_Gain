@@ -2,6 +2,11 @@ name: Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      prerelease:
+        description: 'Publicar o APK como pre-release do GitHub (para baixar fora do Actions)'
+        type: boolean
+        default: false
   push:
     paths:
       - 'apps/app/**'
@@ -16,6 +21,8 @@ concurrency:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     timeout-minutes: 60
     env:
       KS_B64: ${{ secrets.LENDCONTROL_KEYSTORE_BASE64 }}
@@ -57,3 +64,12 @@ jobs:
           path: apps/app/dist-android/*.apk
           if-no-files-found: error
           retention-days: 30
+      - name: Pre-release com o APK
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "apk-build-${{ github.run_number }}" apps/app/dist-android/*.apk \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease \
+            --title "APK de teste #${{ github.run_number }}" \
+            --notes "Build automático do app Android (${{ github.ref_name }}). Assinatura: ${KS_B64:+chave de release}${KS_B64:-chave de debug, só para testes}."
