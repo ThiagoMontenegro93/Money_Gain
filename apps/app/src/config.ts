@@ -69,7 +69,7 @@ export async function resetApiUrl(): Promise<void> {
 }
 
 /** Testa se o endereço responde como uma API do LendControl (GET /health). */
-export async function probeApiUrl(url: string, timeoutMs = 8000): Promise<{ ok: boolean; message: string }> {
+export async function probeApiUrl(url: string, timeoutMs = 15000): Promise<{ ok: boolean; message: string }> {
   const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
   try {
