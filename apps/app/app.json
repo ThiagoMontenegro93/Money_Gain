@@ -7,16 +7,74 @@
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0F172A",
-    "ios": { "supportsTablet": true, "bundleIdentifier": "app.lendcontrol.pro" },
-    "android": { "package": "app.lendcontrol.pro" },
-    "web": { "bundler": "metro", "output": "single", "name": "LendControl Pro" },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.lendcontrol.pro",
+      "icon": "./assets/icon.png"
+    },
+    "android": {
+      "package": "app.lendcontrol.pro",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F172A"
+      },
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "name": "LendControl Pro"
+    },
     "plugins": [
       "expo-router",
       "expo-secure-store",
       "expo-web-browser",
-      ["expo-image-picker", { "photosPermission": "Permitir acesso às fotos para anexar comprovantes e documentos." }],
-      ["expo-local-authentication", { "faceIDPermission": "Confirmar aprovações com biometria." }]
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permitir acesso às fotos para anexar comprovantes e documentos."
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Confirmar aprovações com biometria."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#0F172A"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true,
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "buildArchs": [
+              "arm64-v8a",
+              "armeabi-v7a",
+              "x86_64"
+            ],
+            "enableMinifyInReleaseBuilds": false
+          }
+        }
+      ],
+      "./plugins/withReleaseSigning"
     ],
-    "experiments": { "typedRoutes": false }
+    "experiments": {
+      "typedRoutes": false
+    },
+    "icon": "./assets/icon.png"
   }
 }

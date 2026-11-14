@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api, ApiError, setAuthToken, setUnauthorizedHandler } from '../api';
 import { clearCache, setCacheUser } from '../offline/cache';
+import { loadApiUrl } from '../config';
 import { kvGet, kvRemove, kvSet } from '../offline/kv';
 import { setOutboxUser, startOutboxSync } from '../offline/outbox';
 import type { Role, UserDTO } from '../api/types';
@@ -54,6 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     startOutboxSync();
     (async () => {
+      await loadApiUrl();
       const t = await getToken();
       if (t) {
         setAuthToken(t);
