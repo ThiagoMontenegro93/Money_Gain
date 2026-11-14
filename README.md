@@ -108,6 +108,8 @@ Decisões em que interpretei a especificação estão em `docs/DECISOES.md`.
   indo para aprovação (nada é baixado offline).
 - **Produção**: imagem Docker única (app web + API), HTTPS automático, cópia diária do banco, criação do dono no primeiro
   acesso, `GET /api/health` para monitoramento e perfis de build Android/iPhone (EAS). Passo a passo em `docs/DEPLOY.md`.
+- **App Android (APK)**: instalável sem loja; o servidor é escolhido na tela de login (IP da rede local ou domínio).
+  Build local (`apps/app/scripts/build-apk.sh`) ou pelo GitHub Actions. iPhone: atalho do Safari ou TestFlight. Ver `docs/ANDROID.md`.
 
 ## Próximos passos (dependem de contas do dono)
 
