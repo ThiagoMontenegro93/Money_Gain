@@ -1,0 +1,48 @@
+# Teste local no Windows/Mac/Linux: banco + Redis + LendControl (web e API) na porta 3000.
+# Use INICIAR.bat (Windows) ou: docker compose --env-file .env.local up -d --build
+name: lendcontrol-local
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lend
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?rode o INICIAR.bat}
+      POSTGRES_DB: lendcontrol
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lend -d lendcontrol"]
+      interval: 5s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+  app:
+    build: ..
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+    environment:
+      DATABASE_URL: postgresql://lend:${POSTGRES_PASSWORD}@postgres:5432/lendcontrol?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      FILE_SIGNING_SECRET: ${FILE_SIGNING_SECRET}
+      OWNER_NAME: ${OWNER_NAME:-Dono}
+      OWNER_EMAIL: ${OWNER_EMAIL}
+      OWNER_PASSWORD: ${OWNER_PASSWORD}
+      SMTP_URL: ${SMTP_URL:-}
+      SMTP_FROM: ${SMTP_FROM:-LendControl <backup@lendcontrol.app>}
+    volumes:
+      - appdata:/data
+    ports:
+      - "3000:3000"
+volumes:
+  pgdata:
+  redisdata:
+  appdata:
