@@ -6,6 +6,7 @@ on:
     paths:
       - 'apps/app/**'
       - 'packages/core/**'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/android-apk.yml'
 
 concurrency:

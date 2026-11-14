@@ -490,7 +490,7 @@ const styles = StyleSheet.create({
   band: { borderRadius: 16, padding: 20, flexDirection: 'row', flexWrap: 'wrap', gap: 16, alignItems: 'center', marginBottom: 12, borderWidth: 1 },
   bandName: { color: '#FFFFFF', fontSize: 26, fontWeight: '900' },
   bandSub: { color: 'rgba(255,255,255,0.92)', fontSize: 15, fontWeight: '700', marginTop: 4 },
-  bandActions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  bandActions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', flexShrink: 1, maxWidth: '100%' },
   perda: { backgroundColor: '#030712', borderWidth: 2, borderColor: colors.danger, borderRadius: 12, padding: 16, marginBottom: 12 },
   perdaBanner: { backgroundColor: '#7F1D1D', borderRadius: 10, padding: 12, marginBottom: 12 },
   perdaText: { color: '#FFFFFF', fontSize: 18, fontWeight: '900' },
