@@ -1,0 +1,106 @@
+name: Testes
+
+# Roda sozinho a cada push e em toda PR: motor, API (com Postgres e Redis) e telas no navegador.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: postgresql://lend:lend@localhost:5432/lendcontrol?schema=public
+  REDIS_URL: redis://localhost:6379
+  # chaves só de teste (o CI não tem dados reais)
+  JWT_SECRET: ci-jwt-secret-com-pelo-menos-32-caracteres-xx
+  ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000001
+  FILE_SIGNING_SECRET: ci-file-signing-secret-xxxxxxxxxxxxxxxxxx
+  SMTP_URL: smtp://localhost:2526
+  SMTP_FROM: LendControl CI <ci@lendcontrol.app>
+  PORT: 3000
+  STORAGE_DIR: ./storage-ci
+  TZ: America/Sao_Paulo
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: lend
+          POSTGRES_PASSWORD: lend
+          POSTGRES_DB: lendcontrol
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U lend -d lendcontrol" --health-interval 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Motor (core)
+        working-directory: packages/core
+        run: pnpm build && npx vitest run
+
+      - name: Banco e build da API
+        working-directory: apps/api
+        run: npx prisma migrate deploy && pnpm build
+
+      - name: Build do app web
+        working-directory: apps/app
+        env:
+          EXPO_PUBLIC_API_URL: /api
+        run: pnpm build:web
+
+      - name: Subir a API
+        working-directory: apps/api
+        run: |
+          pnpm seed > /dev/null
+          nohup node dist/main.js > "$RUNNER_TEMP/api.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf localhost:3000/api/health && break; sleep 1; done
+
+      - name: Testes da API
+        working-directory: apps/api
+        env:
+          API_URL: http://localhost:3000/api
+        run: pnpm test
+
+      - name: Navegador para os testes de tela
+        run: |
+          npm i -g playwright@1.63.0
+          npx playwright install --with-deps chromium
+          echo "NODE_PATH=$(npm root -g)" >> "$GITHUB_ENV"
+
+      - name: Testes de tela (computador e celular)
+        working-directory: apps/app
+        run: |
+          (cd ../api && pnpm seed > /dev/null)
+          mkdir -p "$RUNNER_TEMP/telas"
+          for t in flow fase2 fase3 opcoes atraso-longo renegociacao offline responsive; do
+            echo "::group::$t"
+            node "e2e/$t.js" "$RUNNER_TEMP/telas"
+            echo "::endgroup::"
+          done
+
+      - name: Log da API
+        if: failure()
+        run: tail -n 200 "$RUNNER_TEMP/api.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: telas
+          path: ${{ runner.temp }}/telas
+          if-no-files-found: ignore
+          retention-days: 7
