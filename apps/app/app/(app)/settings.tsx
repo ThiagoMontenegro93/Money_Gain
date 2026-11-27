@@ -12,7 +12,7 @@ import { describeLongLate, draftFromLongLate, LongLateEditor, longLateFromDraft 
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Badge, Button, Card, Checkbox, Empty, ErrorState, InlineError, Input, KV, Loading, Notice, Select, Stack, Tabs } from '@/components/ui';
-import { API_URL } from '@/config';
+import { getApiUrl } from '@/config';
 import { useAsync } from '@/hooks/useAsync';
 import { useLayout } from '@/hooks/useLayout';
 import { colors } from '@/theme';
@@ -79,7 +79,7 @@ function ProfileTab() {
           <KV k="Nome" v={user?.name ?? ''} />
           <KV k="E-mail" v={user?.email ?? ''} />
           <KV k="Papel" v={user ? ROLE_LABEL[user.role] : ''} />
-          <KV k="API" v={API_URL} />
+          <KV k="API" v={getApiUrl()} />
         </View>
         <Button title="Sair" icon="🚪" variant="secondary" onPress={() => void logout()} style={{ alignSelf: 'flex-start' }} />
       </Card>

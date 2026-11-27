@@ -1,0 +1,75 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: 'Publicar o APK como pre-release do GitHub (para baixar fora do Actions)'
+        type: boolean
+        default: false
+  push:
+    paths:
+      - 'apps/app/**'
+      - 'packages/core/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/android-apk.yml'
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 60
+    env:
+      KS_B64: ${{ secrets.LENDCONTROL_KEYSTORE_BASE64 }}
+      KS_PASS: ${{ secrets.LENDCONTROL_KEYSTORE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: pnpm install --frozen-lockfile
+      # Sem a chave de release (secret), o APK sai assinado com a chave de debug;
+      # a assinatura final é feita fora do CI com apksigner (ver docs/ANDROID.md).
+      - name: Assinatura (opcional)
+        if: ${{ env.KS_B64 != '' }}
+        run: |
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          {
+            echo "LENDCONTROL_STORE_FILE=$RUNNER_TEMP/release.keystore"
+            echo "LENDCONTROL_STORE_PASSWORD=$KS_PASS"
+            echo "LENDCONTROL_KEY_ALIAS=lendcontrol"
+            echo "LENDCONTROL_KEY_PASSWORD=$KS_PASS"
+          } > "$RUNNER_TEMP/keystore.properties"
+          echo "KEYSTORE_PROPS=$RUNNER_TEMP/keystore.properties" >> "$GITHUB_ENV"
+      - name: Build APK
+        working-directory: apps/app
+        env:
+          EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+        run: ./scripts/build-apk.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lendcontrol-pro-apk
+          path: apps/app/dist-android/*.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Pre-release com o APK
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "apk-build-${{ github.run_number }}" apps/app/dist-android/*.apk \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease \
+            --title "APK de teste #${{ github.run_number }}" \
+            --notes "Build automático do app Android (${{ github.ref_name }}). Assinatura: ${KS_B64:+chave de release}${KS_B64:-chave de debug, só para testes}."
