@@ -24,6 +24,17 @@ export function toEngineLoan(l: Loan): EngineLoan {
     status: l.status,
     allowAmortization: l.allowAmortization,
     allowLateFee: l.allowLateFee,
+    ...longLateOf(l),
+  };
+}
+
+/** Cobrança especial por atraso longo no formato do motor (centavos). */
+export function longLateOf(l: Loan) {
+  return {
+    longLateMode: l.longLateMode,
+    longLateAfterDays: l.longLateAfterDays,
+    longLatePercent: num(l.longLatePercent),
+    longLateFixedCents: c(l.longLateFixed),
   };
 }
 
@@ -73,6 +84,7 @@ export function loanSummary(l: LoanWith, asOf: ISODate) {
     multaDiaPercent: num(l.multaDiaPercent),
     allowAmortization: l.allowAmortization,
     allowLateFee: l.allowLateFee,
+    ...longLateOf(l),
     installmentsCount: l.installmentsCount,
     releaseDate: iso(l.releaseDate)!,
     dueDate: iso(l.dueDate)!,
@@ -134,6 +146,7 @@ export function paymentDTO(p: PaymentWith) {
             principalCents: c(p.principalPart),
             interestCents: c(p.interestPart),
             fineCents: c(p.finePart),
+            longLateCents: c(p.longLatePart),
             extraCents: c(p.extraPart),
             commissionCents: c(p.commissionPart),
           }

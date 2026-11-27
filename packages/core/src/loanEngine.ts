@@ -48,6 +48,32 @@ export interface EngineLoan {
   allowAmortization?: boolean;
   /** Cobra multa % ao dia sobre parcelas vencidas (padrão: sim). Desligado, o atraso só conta para o score. */
   allowLateFee?: boolean;
+  /** Cobrança especial por atraso longo: desligada, % ao dia ou R$ fixo ao dia. */
+  longLateMode?: LongLateMode;
+  /** A partir de quantos dias de atraso da parcela a cobrança especial começa (padrão 60). */
+  longLateAfterDays?: number;
+  /** % ao dia sobre o valor da parcela (modo PERCENT). */
+  longLatePercent?: number;
+  /** Valor fixo em centavos por dia (modo FIXED). */
+  longLateFixedCents?: Cents;
+}
+
+export type LongLateMode = 'OFF' | 'PERCENT' | 'FIXED';
+export const LONG_LATE_DEFAULT_DAYS = 60;
+
+/** Dias cobrados pela cobrança especial: conta do dia em que o atraso atinge o limite em diante. */
+export function longLateDays(loan: Pick<EngineLoan, 'longLateMode' | 'longLateAfterDays'>, dias: number): number {
+  if (!loan.longLateMode || loan.longLateMode === 'OFF') return 0;
+  const after = Math.max(1, loan.longLateAfterDays ?? LONG_LATE_DEFAULT_DAYS);
+  return dias >= after ? dias - after + 1 : 0;
+}
+
+/** Valor da cobrança especial por atraso longo sobre `valueCents` (uma parcela). */
+export function longLateCharge(loan: EngineLoan, valueCents: Cents, dias: number): Cents {
+  const n = longLateDays(loan, dias);
+  if (n === 0) return 0;
+  if (loan.longLateMode === 'FIXED') return Math.max(0, Math.round(loan.longLateFixedCents ?? 0)) * n;
+  return roundCents(valueCents * ((loan.longLatePercent ?? 0) / 100) * n);
 }
 
 /** Multa diária efetiva: zero quando o empréstimo não admite multa por atraso. */
@@ -106,6 +132,10 @@ export interface CreateLoanInput {
   installmentsCount?: number;
   allowAmortization?: boolean;
   allowLateFee?: boolean;
+  longLateMode?: LongLateMode;
+  longLateAfterDays?: number;
+  longLatePercent?: number;
+  longLateFixedCents?: Cents;
 }
 
 export interface CreatedLoan {
@@ -122,11 +152,23 @@ function validateCreate(input: CreateLoanInput) {
     throw new LoanEngineError('INVALID_RATE', 'Taxa deve estar entre 0% e 1000%');
   if (!(input.multaDiaPercent >= 0) || input.multaDiaPercent > 100)
     throw new LoanEngineError('INVALID_FINE', 'Multa diária deve estar entre 0% e 100%');
+  validateLongLate(input);
   if (input.type === 'FIXED_INSTALLMENT') {
     const n = input.installmentsCount ?? 0;
     if (!Number.isInteger(n) || n < 1 || n > 360)
       throw new LoanEngineError('INVALID_COUNT', 'Número de parcelas deve estar entre 1 e 360');
   }
+}
+
+export function validateLongLate(o: Pick<CreateLoanInput, 'longLateMode' | 'longLateAfterDays' | 'longLatePercent' | 'longLateFixedCents'>) {
+  if (!o.longLateMode || o.longLateMode === 'OFF') return;
+  const days = o.longLateAfterDays ?? LONG_LATE_DEFAULT_DAYS;
+  if (!Number.isInteger(days) || days < 1 || days > 3650)
+    throw new LoanEngineError('INVALID_LONG_LATE', 'O atraso longo deve começar entre 1 e 3650 dias');
+  if (o.longLateMode === 'PERCENT' && (!((o.longLatePercent ?? 0) > 0) || (o.longLatePercent ?? 0) > 100))
+    throw new LoanEngineError('INVALID_LONG_LATE', 'A cobrança por atraso longo deve ser maior que 0% e até 100% ao dia');
+  if (o.longLateMode === 'FIXED' && (!Number.isInteger(o.longLateFixedCents) || (o.longLateFixedCents ?? 0) <= 0))
+    throw new LoanEngineError('INVALID_LONG_LATE', 'Informe o valor fixo por dia do atraso longo');
 }
 
 /** createLoanWithProjection: cria 1 quitação prevista + 3 projeções de juros (ou tabela Price). */
@@ -143,6 +185,10 @@ export function createLoanWithProjection(input: CreateLoanInput): CreatedLoan {
     status: 'ATIVO',
     allowAmortization: input.allowAmortization ?? true,
     allowLateFee: input.allowLateFee ?? true,
+    longLateMode: input.longLateMode ?? 'OFF',
+    longLateAfterDays: input.longLateAfterDays ?? LONG_LATE_DEFAULT_DAYS,
+    longLatePercent: input.longLatePercent ?? 0,
+    longLateFixedCents: input.longLateFixedCents ?? 0,
   };
 
   if (input.type === 'INTEREST_ONLY') {
@@ -216,6 +262,10 @@ export interface InstallmentView extends EngineInstallment {
   updatedCents: Cents;
   /** Valor atualizado apenas dos juros (para pagamento "só juros"). */
   interestUpdatedCents: Cents;
+  /** Parte de updatedCents que vem da cobrança especial por atraso longo. */
+  longLateCents: Cents;
+  /** Parte de interestUpdatedCents que vem da cobrança especial por atraso longo. */
+  interestLongLateCents: Cents;
   displayStatus: InstallmentDisplayStatus;
 }
 
@@ -228,11 +278,15 @@ export function viewInstallment(inst: EngineInstallment, loan: EngineLoan, asOf:
   else if (dias > 0) displayStatus = 'ATRASADA';
   else if (inst.isProjection) displayStatus = 'PROJECAO';
   else displayStatus = 'PENDENTE';
+  const longFull = open ? longLateCharge(loan, inst.originalCents, dias) : 0;
+  const longInterest = open ? longLateCharge(loan, inst.interestCents, dias) : 0;
   return {
     ...inst,
     diasAtraso: dias,
-    updatedCents: open ? applyLateFee(inst.originalCents, effectiveFinePercent(loan), dias) : inst.originalCents,
-    interestUpdatedCents: open ? applyLateFee(inst.interestCents, effectiveFinePercent(loan), dias) : inst.interestCents,
+    updatedCents: open ? applyLateFee(inst.originalCents, effectiveFinePercent(loan), dias) + longFull : inst.originalCents,
+    interestUpdatedCents: open ? applyLateFee(inst.interestCents, effectiveFinePercent(loan), dias) + longInterest : inst.interestCents,
+    longLateCents: longFull,
+    interestLongLateCents: longInterest,
     displayStatus,
   };
 }
@@ -254,6 +308,8 @@ export interface PayoffQuote {
   principalCents: Cents;
   interestCents: Cents;
   fineCents: Cents;
+  /** Parte de fineCents que vem da cobrança especial por atraso longo. */
+  longLateCents: Cents;
   /** Parcelas que ficam PAGAS na quitação. */
   coveredNumbers: number[];
   /** Parcelas canceladas (projeções removidas). */
@@ -293,6 +349,7 @@ export function simulatePayoff(loan: EngineLoan, installments: EngineInstallment
     principalCents: loan.saldoDevedorCents,
     interestCents: interest,
     fineCents: amount - loan.saldoDevedorCents - interest,
+    longLateCents: overdue.reduce((s, v) => s + v.longLateCents, 0),
     coveredNumbers,
     cancelledNumbers: views.filter((v) => !coveredNumbers.includes(v.number)).map((v) => v.number),
   };
@@ -332,6 +389,8 @@ export interface PaymentAllocation {
   principalCents: Cents;
   interestCents: Cents;
   fineCents: Cents;
+  /** Parte de fineCents que vem da cobrança especial por atraso longo. */
+  longLateCents?: Cents;
   /** Valor pago acima do devido (tratado como receita de juros). */
   extraCents: Cents;
 }
@@ -440,6 +499,7 @@ export function onPayInterest(loan: EngineLoan, installments: EngineInstallment[
       principalCents: 0,
       interestCents: target.interestCents,
       fineCents: view.interestUpdatedCents - target.interestCents,
+      longLateCents: view.interestLongLateCents,
       extraCents: p.amountCents - view.interestUpdatedCents,
     },
     installmentNumber: target.number,
@@ -492,6 +552,7 @@ export function onPayQuitacao(loan: EngineLoan, installments: EngineInstallment[
       principalCents: quote.principalCents,
       interestCents: quote.interestCents,
       fineCents: quote.fineCents,
+      longLateCents: quote.longLateCents,
       extraCents: p.amountCents - quote.amountCents,
     },
     installmentNumber: lastCovered,
@@ -520,6 +581,7 @@ export function onPayFixedInstallment(loan: EngineLoan, installments: EngineInst
       principalCents: target.principalCents,
       interestCents: target.interestCents,
       fineCents: view.updatedCents - target.originalCents,
+      longLateCents: view.longLateCents,
       extraCents: p.amountCents - view.updatedCents,
     },
     installmentNumber: target.number,

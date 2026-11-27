@@ -7,6 +7,7 @@ import { errorMessage } from '@/api/http';
 import type { LoanDetail, PaymentType } from '@/api/types';
 import { FileSlot } from '@/components/FileSlot';
 import { InstallmentTimeline } from '@/components/InstallmentTimeline';
+import { describeLongLate, draftFromLongLate, LongLateDraft, LongLateEditor, longLateFromDraft } from '@/components/LongLateEditor';
 import { PaymentList } from '@/components/PaymentList';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
@@ -34,6 +35,7 @@ function QuoteBox({ q }: { q: LoanQuote }) {
       {q.installmentCents != null ? <KV k="Valor da parcela" v={brl(q.installmentCents)} /> : null}
       {q.payoff ? <KV k="Quitação total" v={<Text style={{ color: '#6EE7B7', fontWeight: '900', fontSize: 18 }}>{brl(q.payoff.amountCents)}</Text>} /> : null}
       {q.payoff ? <KV k="Composição" v={`principal ${brl(q.payoff.principalCents)} + juros ${brl(q.payoff.interestCents)} + multa ${brl(q.payoff.fineCents)}`} /> : null}
+      {q.payoff?.longLateCents ? <KV k="Da multa, atraso longo" v={<Text testID="quote-long-late" style={{ color: '#FCA5A5', fontWeight: '900' }}>{brl(q.payoff.longLateCents)}</Text>} /> : null}
       <KV k="Parcelas atrasadas" v={String(q.overdueCount)} />
     </View>
   );
@@ -48,6 +50,10 @@ export default function LoanDetailScreen() {
   const outbox = useOutbox();
   const { hasRole } = useAuth();
   const [optBusy, setOptBusy] = useState(false);
+  const [llDraft, setLlDraft] = useState<LongLateDraft | null>(null);
+  useEffect(() => {
+    if (loan) setLlDraft(draftFromLongLate(loan));
+  }, [loan]);
 
   const [simOpen, setSimOpen] = useState(false);
   const [simDate, setSimDate] = useState(isoToBR(todayISO()));
@@ -93,7 +99,7 @@ export default function LoanDetailScreen() {
   if (!loan) return null;
 
   const active = loan.status === 'ATIVO' || loan.status === 'PERDA';
-  const changeOptions = async (b: { allowLateFee?: boolean; allowAmortization?: boolean }, msg: string) => {
+  const changeOptions = async (b: Parameters<typeof api.loans.options>[1], msg: string) => {
     setOptBusy(true);
     try {
       await api.loans.options(loan.id, b);
@@ -200,11 +206,28 @@ export default function LoanDetailScreen() {
             <KV k="Dias sem pagar" v={String(loan.diasSemPagar)} />
             <KV k="Multa por atraso" v={loan.allowLateFee ? `${loan.multaDiaPercent}% ao dia` : 'Não cobra'} />
             <KV k="Amortização" v={loan.allowAmortization ? 'Aceita' : 'Não aceita'} />
+            <KV k="Atraso longo" v={<Text testID="long-late-summary" style={{ color: colors.text, fontWeight: '700' }}>{describeLongLate(loan)}</Text>} />
           </View>
           {hasRole('ADMIN', 'SUPER_ADMIN') && active ? (
             <View testID="loan-options-admin" style={styles.optionsBox}>
               <Checkbox testID="opt-late-fee" checked={loan.allowLateFee} onChange={(v) => void changeOptions({ allowLateFee: v }, v ? 'Multa por atraso ligada' : 'Multa por atraso perdoada: parcelas voltam ao valor original')} label="Cobrar multa diária por atraso" />
               <Checkbox testID="opt-amortization" checked={loan.allowAmortization} onChange={(v) => void changeOptions({ allowAmortization: v }, v ? 'Amortização liberada' : 'Amortização bloqueada')} label="Aceitar amortização" />
+              <LongLateEditor prefix="loan-ll" value={llDraft ?? draftFromLongLate(loan)} onChange={setLlDraft} />
+              <View style={{ flexDirection: 'row' }}>
+                <Button
+                  testID="loan-ll-save"
+                  title="Salvar atraso longo"
+                  icon="💾"
+                  size="sm"
+                  variant="secondary"
+                  loading={optBusy}
+                  onPress={() => {
+                    const r = longLateFromDraft(llDraft ?? draftFromLongLate(loan));
+                    if ('error' in r) return toast(r.error, 'error');
+                    void changeOptions(r.value, r.value.longLateMode === 'OFF' ? 'Cobrança por atraso longo desligada' : `Atraso longo: ${describeLongLate(r.value)}`);
+                  }}
+                />
+              </View>
               {optBusy ? <Text style={{ color: colors.textMuted, fontSize: 12 }}>Salvando…</Text> : null}
             </View>
           ) : null}

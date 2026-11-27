@@ -8,6 +8,7 @@ import type { MessageTemplateDTO, WaProvider, WhatsAppConfigBody, WhatsAppConfig
 import { ROLE_LABEL, useAuth } from '@/auth/AuthContext';
 import { BackupPanel } from '@/components/BackupPanel';
 import { MessageLogList, MessageStatusBadge } from '@/components/MessageLogList';
+import { describeLongLate, draftFromLongLate, LongLateEditor, longLateFromDraft } from '@/components/LongLateEditor';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Badge, Button, Card, Checkbox, Empty, ErrorState, InlineError, Input, KV, Loading, Notice, Select, Stack, Tabs } from '@/components/ui';
@@ -421,6 +422,7 @@ function LoanDefaultsTab() {
   const [fee, setFee] = useState(true);
   const [amort, setAmort] = useState(true);
   const [fine, setFine] = useState('1');
+  const [longLate, setLongLate] = useState(draftFromLongLate(null));
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -428,16 +430,19 @@ function LoanDefaultsTab() {
     setFee(data.allowLateFee);
     setAmort(data.allowAmortization);
     setFine(String(data.multaDiaPercent).replace('.', ','));
+    setLongLate(draftFromLongLate(data));
   }, [data]);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   const save = async () => {
     const n = Number(fine.replace(',', '.'));
     if (fee && !(n >= 0 && n <= 100)) return setErr('Multa diária entre 0% e 100%');
+    const ll = longLateFromDraft(longLate);
+    if ('error' in ll) return setErr(ll.error);
     setErr(null);
     setBusy(true);
     try {
-      await api.loans.saveDefaults({ allowLateFee: fee, allowAmortization: amort, multaDiaPercent: fee ? n : 0 });
+      await api.loans.saveDefaults({ allowLateFee: fee, allowAmortization: amort, multaDiaPercent: fee ? n : 0, ...ll.value });
       toast('Padrão dos empréstimos salvo');
       reload();
     } catch (e) {
@@ -455,6 +460,8 @@ function LoanDefaultsTab() {
         <Checkbox testID="def-late-fee" checked={fee} onChange={editable ? setFee : () => {}} label="Cobrar multa diária por atraso, além dos juros do período" />
         {fee ? <Input testID="def-fine" label="Multa diária padrão %" mask="decimal" value={fine} onChangeText={setFine} editable={editable} style={{ maxWidth: 260 }} hint="ValorAtual = Parcela × (1 + %multa × dias)" /> : null}
         <Checkbox testID="def-amortization" checked={amort} onChange={editable ? setAmort : () => {}} label="Aceitar amortização (abater parte do principal)" />
+        <LongLateEditor prefix="def-ll" value={longLate} onChange={setLongLate} editable={editable} />
+        {!editable && data ? <Text style={{ color: colors.textMuted, fontSize: 13 }}>Atraso longo: {describeLongLate(data)}</Text> : null}
       </View>
       <InlineError message={err} />
       {editable ? (

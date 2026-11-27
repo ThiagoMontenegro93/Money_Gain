@@ -169,6 +169,10 @@ export interface CreateLoanBody {
   installmentsCount?: number;
   allowAmortization?: boolean;
   allowLateFee?: boolean;
+  longLateMode?: LongLateMode;
+  longLateAfterDays?: number;
+  longLatePercent?: number;
+  longLateFixedCents?: number;
   riskAcknowledged?: boolean;
   notes?: string;
 }
@@ -193,6 +197,10 @@ export interface LoanSummary {
   multaDiaPercent: number;
   allowAmortization: boolean;
   allowLateFee: boolean;
+  longLateMode: LongLateMode;
+  longLateAfterDays: number;
+  longLatePercent: number;
+  longLateFixedCents: number;
   releaseDate: string;
   dueDate: string;
   status: LoanStatus;
@@ -234,6 +242,7 @@ export interface PaymentDTO {
     principalCents: number;
     interestCents: number;
     fineCents: number;
+    longLateCents?: number;
     extraCents: number;
     commissionCents: number;
   } | null;
@@ -321,6 +330,10 @@ export interface DashboardDTO {
   totalAReceberCents: number;
   totalEmPerdaCents: number;
   jurosRecebidosMesCents: number;
+  multasRecebidasMesCents?: number;
+  atrasoLongoRecebidoMesCents?: number;
+  atrasoLongoAReceberCents?: number;
+  atrasoLongoEmprestimos?: number;
   repassePendenteCents: number;
   comissaoAPagarCents: number;
   pendingApprovals: { payments: number; transfers: number };
@@ -479,5 +492,8 @@ export interface RestoreResult {
 }
 
 /** Padrão geral para novos empréstimos. */
-export interface LoanDefaults { allowAmortization: boolean; allowLateFee: boolean; multaDiaPercent: number }
-export interface LoanOptionsBody { allowAmortization?: boolean; allowLateFee?: boolean; multaDiaPercent?: number }
+export type LongLateMode = 'OFF' | 'PERCENT' | 'FIXED';
+/** Cobrança especial quando a parcela passa de N dias de atraso. */
+export interface LongLate { longLateMode: LongLateMode; longLateAfterDays: number; longLatePercent: number; longLateFixedCents: number }
+export interface LoanDefaults extends LongLate { allowAmortization: boolean; allowLateFee: boolean; multaDiaPercent: number }
+export interface LoanOptionsBody extends Partial<LongLate> { allowAmortization?: boolean; allowLateFee?: boolean; multaDiaPercent?: number }

@@ -47,7 +47,7 @@ describe('projeção automática (exemplo da especificação)', () => {
     const s = base();
     const plan = onPayInterest(s.loan, s.installments, { type: 'JUROS', amountCents: 10_000, asOf: '2026-11-30' });
     expect(plan.creates.map((c) => c.dueDate)).toEqual(['2027-03-30']);
-    expect(plan.allocation).toEqual({ principalCents: 0, interestCents: 10_000, fineCents: 0, extraCents: 0 });
+    expect(plan.allocation).toEqual({ principalCents: 0, interestCents: 10_000, fineCents: 0, longLateCents: 0, extraCents: 0 });
     const next = applyPlan(s.loan, s.installments, plan);
     expect(next.loan.saldoDevedorCents).toBe(100_000);
     const open = next.installments.filter((i) => i.status === 'PENDENTE');
@@ -73,7 +73,7 @@ describe('projeção automática (exemplo da especificação)', () => {
     s = { ...s, ...applyPlan(s.loan, s.installments, onPayInterest(s.loan, s.installments, { type: 'JUROS', amountCents: 10_000, asOf: '2026-11-30' })) };
     const plan = onPayQuitacao(s.loan, s.installments, { type: 'QUITACAO', amountCents: 110_000, asOf: '2026-12-30', installmentNumber: 2 });
     expect(plan.message).toBe('Quitado em 30/12/2026 - 3 parcelas de projeção removidas');
-    expect(plan.allocation).toEqual({ principalCents: 100_000, interestCents: 10_000, fineCents: 0, extraCents: 0 });
+    expect(plan.allocation).toEqual({ principalCents: 100_000, interestCents: 10_000, fineCents: 0, longLateCents: 0, extraCents: 0 });
     const done = applyPlan(s.loan, s.installments, plan);
     expect(done.loan.status).toBe('QUITADO');
     expect(done.loan.saldoDevedorCents).toBe(0);
@@ -191,5 +191,50 @@ describe('opções do empréstimo: amortização e multa diária', () => {
     expect(simulatePayoff(s.loan, s.installments, '2026-12-10')!.amountCents).toBe(110_000);
     const plan = planPayment(s.loan, s.installments, { type: 'JUROS', amountCents: 10_000, asOf: '2026-12-10' });
     expect(plan.allocation.fineCents).toBe(0);
+  });
+});
+
+describe('cobrança especial por atraso longo (2 meses ou mais)', () => {
+  const ll = (o: Record<string, unknown>) =>
+    createLoanWithProjection({ type: 'INTEREST_ONLY', method: 'MONTHLY', principalCents: 100_000, ratePercent: 10, multaDiaPercent: 1, releaseDate: '2026-10-30', ...o });
+
+  it('desligada por padrão: nada muda', () => {
+    const s = ll({});
+    expect(s.loan.longLateMode).toBe('OFF');
+    expect(viewInstallment(s.installments[0], s.loan, '2027-02-07').longLateCents).toBe(0);
+  });
+
+  it('valor fixo por dia: começa no 60º dia de atraso e soma a cada dia', () => {
+    const s = ll({ longLateMode: 'FIXED', longLateAfterDays: 60, longLateFixedCents: 500 });
+    expect(viewInstallment(s.installments[0], s.loan, '2027-01-28').longLateCents).toBe(0); // 59 dias
+    expect(viewInstallment(s.installments[0], s.loan, '2027-01-29').longLateCents).toBe(500); // 60 dias
+    const v = viewInstallment(s.installments[0], s.loan, '2027-02-07'); // 69 dias
+    expect(v.diasAtraso).toBe(69);
+    expect(v.longLateCents).toBe(5_000);
+    expect(v.updatedCents).toBe(185_900 + 5_000);
+    expect(v.interestUpdatedCents).toBe(16_900 + 5_000);
+    // a parcela 2 (39 dias) ainda não chegou no atraso longo
+    expect(viewInstallment(s.installments[1], s.loan, '2027-02-07').longLateCents).toBe(0);
+  });
+
+  it('% ao dia sobre o valor da parcela; vira receita de multa e fica separado na alocação', () => {
+    const s = ll({ longLateMode: 'PERCENT', longLateAfterDays: 60, longLatePercent: 2 });
+    const v = viewInstallment(s.installments[0], s.loan, '2027-02-07');
+    expect(v.longLateCents).toBe(22_000); // 1.100 × 2% × 10 dias
+    expect(v.interestLongLateCents).toBe(2_000);
+    const juros = planPayment(s.loan, s.installments, { type: 'JUROS', amountCents: v.interestUpdatedCents, asOf: '2027-02-07' });
+    expect(juros.allocation.longLateCents).toBe(2_000);
+    expect(juros.allocation.fineCents).toBe(6_900 + 2_000);
+    const q = simulatePayoff(s.loan, s.installments, '2027-02-07')!;
+    expect(q.longLateCents).toBe(22_000);
+    const quit = planPayment(s.loan, s.installments, { type: 'QUITACAO', amountCents: q.amountCents, asOf: '2027-02-07' });
+    expect(quit.allocation.longLateCents).toBe(22_000);
+    expect(quit.allocation.fineCents).toBe(q.fineCents);
+  });
+
+  it('valida a configuração', () => {
+    expect(() => ll({ longLateMode: 'FIXED', longLateFixedCents: 0 })).toThrow(/valor fixo/);
+    expect(() => ll({ longLateMode: 'PERCENT', longLatePercent: 0 })).toThrow(/maior que 0%/);
+    expect(() => ll({ longLateMode: 'PERCENT', longLatePercent: 1, longLateAfterDays: 0 })).toThrow(/entre 1 e 3650/);
   });
 });

@@ -8,6 +8,7 @@ import type { ClientListItem, CreateLoanBody, CreditLock, LoanPreview } from '@/
 import { useAuth } from '@/auth/AuthContext';
 import { ClientPicker } from '@/components/ClientPicker';
 import { InstallmentTimeline } from '@/components/InstallmentTimeline';
+import { describeLongLate, draftFromLongLate, LongLateEditor, longLateFromDraft } from '@/components/LongLateEditor';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Badge, Button, Card, Checkbox, InlineError, Input, KV, Loading, Modal, MoneyInput, Notice, ScoreBadge, Segmented, Select, Stack } from '@/components/ui';
@@ -38,6 +39,7 @@ export default function NewLoan() {
   const [fine, setFine] = useState('1');
   const [allowFee, setAllowFee] = useState(true);
   const [allowAmort, setAllowAmort] = useState(true);
+  const [longLate, setLongLate] = useState(draftFromLongLate(null));
   // padrão geral (Configurações > Empréstimos)
   useEffect(() => {
     api.loans
@@ -46,6 +48,7 @@ export default function NewLoan() {
         setAllowFee(d.allowLateFee);
         setAllowAmort(d.allowAmortization);
         setFine(decimalText(d.multaDiaPercent));
+        setLongLate(draftFromLongLate(d));
       })
       .catch(() => {});
   }, []);
@@ -80,6 +83,7 @@ export default function NewLoan() {
   const fineN = parseDecimal(fine);
   const releaseISO = brDateToISO(release);
   const countN = Number(count) || 0;
+  const longLateParsed = useMemo(() => longLateFromDraft(longLate), [longLate]);
 
   const body = useMemo<Omit<CreateLoanBody, 'clientId'>>(
     () => ({
@@ -90,18 +94,20 @@ export default function NewLoan() {
       multaDiaPercent: allowFee ? (fineN ?? 0) : 0,
       allowLateFee: allowFee,
       allowAmortization: allowAmort,
+      ...('value' in longLateParsed ? longLateParsed.value : {}),
       releaseDate: releaseISO ?? '',
       ...(type === 'FIXED_INSTALLMENT' ? { installmentsCount: countN } : {}),
       ...(lenderId && lenderId !== user?.id ? { lenderUserId: lenderId } : {}),
       ...(notes.trim() ? { notes: notes.trim() } : {}),
     }),
-    [type, method, principal, rateN, fineN, allowFee, allowAmort, releaseISO, countN, lenderId, user?.id, notes],
+    [type, method, principal, rateN, fineN, allowFee, allowAmort, longLateParsed, releaseISO, countN, lenderId, user?.id, notes],
   );
 
   const termsError = (): string | null => {
     if (!principal || principal <= 0) return 'Informe o valor principal';
     if (rateN == null || rateN < 0) return 'Informe a taxa %';
     if (allowFee && (fineN == null || fineN < 0)) return 'Informe a multa diária %';
+    if ('error' in longLateParsed) return longLateParsed.error;
     if (!releaseISO) return 'Data de liberação inválida (dd/mm/aaaa)';
     if (type === 'FIXED_INSTALLMENT' && (!Number.isInteger(countN) || countN < 1 || countN > 360)) return 'Número de parcelas entre 1 e 360';
     return null;
@@ -228,6 +234,7 @@ export default function NewLoan() {
           <View testID="loan-options" style={styles.options}>
             <Checkbox testID="opt-late-fee" checked={allowFee} onChange={setAllowFee} label="Cobrar multa diária por atraso (além dos juros do período)" />
             <Checkbox testID="opt-amortization" checked={allowAmort} onChange={setAllowAmort} label="Aceitar amortização (abater parte do principal)" />
+            <LongLateEditor prefix="opt-ll" value={longLate} onChange={setLongLate} />
           </View>
           <Segmented testIDPrefix="method" label="Método" required value={method} onChange={setMethod} options={METHODS} />
           <Segmented testIDPrefix="type" label="Tipo" required value={type} onChange={setType} options={TYPES} />
@@ -258,6 +265,7 @@ export default function NewLoan() {
               <KV k="Taxa" v={`${rate}% ${METHOD_LABEL[method]}`} />
               <KV k="Multa diária" v={allowFee ? `${fine}% ao dia` : 'Não cobra'} />
               <KV k="Amortização" v={allowAmort ? 'Aceita' : 'Não aceita'} />
+              <KV k="Atraso longo" v={'value' in longLateParsed ? describeLongLate(longLateParsed.value) : '—'} />
               <KV k="Tipo" v={TYPES.find((t) => t.value === type)!.label} />
               {type === 'FIXED_INSTALLMENT' ? <KV k="Parcelas" v={count} /> : null}
               <KV k="Liberação" v={release} />

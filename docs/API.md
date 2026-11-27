@@ -131,9 +131,9 @@ interface LoanDetail extends LoanSummary {
 ```
 
 ### Opções do empréstimo (amortização e multa diária)
-| GET | /loans/settings | padrão geral `{ allowAmortization, allowLateFee, multaDiaPercent }` |
+| GET | /loans/settings | padrão geral `{ allowAmortization, allowLateFee, multaDiaPercent, longLateMode (OFF\|PERCENT\|FIXED), longLateAfterDays, longLatePercent, longLateFixedCents }` |
 | PUT | /loans/settings | (SUPER_ADMIN) salva o padrão |
-| PATCH | /loans/:id/options | (ADMIN+) `{ allowAmortization?, allowLateFee?, multaDiaPercent? }` — ex.: perdoar a multa; recalcula as parcelas em aberto |
+| PATCH | /loans/:id/options | (ADMIN+) `{ allowAmortization?, allowLateFee?, multaDiaPercent?, longLateMode?, longLateAfterDays?, longLatePercent?, longLateFixedCents? }` — ex.: perdoar a multa ou ligar a cobrança por atraso longo; recalcula as parcelas em aberto |
 
 `POST /loans` e `/loans/preview` aceitam `allowAmortization` e `allowLateFee` (opcionais, padrão geral). Sem multa, `multaDiaPercent` vira 0
 e o atraso só conta para o score. `AMORTIZACAO` em empréstimo que não aceita é recusado (400 `AMORTIZATION_DISABLED`).

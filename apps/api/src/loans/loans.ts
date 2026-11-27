@@ -3,6 +3,9 @@ import {
   createLoanWithProjection,
   CreateLoanInput,
   isValidISODate,
+  LONG_LATE_DEFAULT_DAYS,
+  LongLateMode,
+  validateLongLate,
   quoteLoan,
   viewInstallment,
 } from '@lendcontrol/core';
@@ -15,8 +18,15 @@ import { PrismaService } from '../common/prisma.service';
 import { d, dt, num, today, ZodPipe } from '../common/util';
 import { ClientsService, creditLockFor } from '../clients/clients.service';
 import { ScoreService } from '../clients/score.service';
-import { loanInclude, loanSummary, loanViews, paymentDTO, paymentInclude, toEngineInstallment, toEngineLoan } from './loan-mapper';
+import { longLateOf, loanInclude, loanSummary, loanViews, paymentDTO, paymentInclude, toEngineInstallment, toEngineLoan } from './loan-mapper';
 
+const longLateFields = {
+  longLateMode: z.enum(['OFF', 'PERCENT', 'FIXED']).optional(),
+  longLateAfterDays: z.number().int().min(1).max(3650).optional(),
+  longLatePercent: z.number().min(0).max(100).optional(),
+  longLateFixedCents: z.number().int().min(0).max(100_000_000).optional(),
+};
+type LongLate = { longLateMode: LongLateMode; longLateAfterDays: number; longLatePercent: number; longLateFixedCents: number };
 const isoDate = z.string().refine(isValidISODate, 'Data inválida (YYYY-MM-DD)');
 const loanBase = z.object({
   type: z.enum(['INTEREST_ONLY', 'FIXED_INSTALLMENT']),
@@ -28,6 +38,7 @@ const loanBase = z.object({
   installmentsCount: z.number().int().min(1).max(360).optional(),
   allowAmortization: z.boolean().optional(),
   allowLateFee: z.boolean().optional(),
+  ...longLateFields,
 });
 
 /** Padrão geral para novos empréstimos (Configurações > Empréstimos). */
@@ -35,11 +46,45 @@ export interface LoanDefaults {
   allowAmortization: boolean;
   allowLateFee: boolean;
   multaDiaPercent: number;
+  /** Cobrança especial por atraso longo (padrão: desligada, a partir de 60 dias). */
+  longLateMode: LongLateMode;
+  longLateAfterDays: number;
+  longLatePercent: number;
+  longLateFixedCents: number;
 }
 export const LOAN_DEFAULTS_KEY = 'loans.defaults';
-export const LOAN_DEFAULTS: LoanDefaults = { allowAmortization: true, allowLateFee: true, multaDiaPercent: 1 };
-const defaultsSchema = z.object({ allowAmortization: z.boolean(), allowLateFee: z.boolean(), multaDiaPercent: z.number().min(0).max(100) });
-const optionsSchema = z.object({ allowAmortization: z.boolean().optional(), allowLateFee: z.boolean().optional(), multaDiaPercent: z.number().min(0).max(100).optional() });
+export const LOAN_DEFAULTS: LoanDefaults = {
+  allowAmortization: true,
+  allowLateFee: true,
+  multaDiaPercent: 1,
+  longLateMode: 'OFF',
+  longLateAfterDays: LONG_LATE_DEFAULT_DAYS,
+  longLatePercent: 0,
+  longLateFixedCents: 0,
+};
+const defaultsSchema = z.object({
+  allowAmortization: z.boolean(),
+  allowLateFee: z.boolean(),
+  multaDiaPercent: z.number().min(0).max(100),
+  ...longLateFields,
+});
+const optionsSchema = z.object({ allowAmortization: z.boolean().optional(), allowLateFee: z.boolean().optional(), multaDiaPercent: z.number().min(0).max(100).optional(), ...longLateFields });
+
+/** Valida a cobrança especial e devolve 400 com a mensagem do motor. */
+function checkLongLate(o: LongLate) {
+  try {
+    validateLongLate(o);
+  } catch (e) {
+    throw new BadRequestException(e instanceof Error ? e.message : 'Cobrança por atraso longo inválida');
+  }
+  return o;
+}
+const pickLongLate = (o: Partial<LongLate>, fb: LongLate): LongLate => ({
+  longLateMode: o.longLateMode ?? fb.longLateMode,
+  longLateAfterDays: o.longLateAfterDays ?? fb.longLateAfterDays,
+  longLatePercent: o.longLatePercent ?? fb.longLatePercent,
+  longLateFixedCents: o.longLateFixedCents ?? fb.longLateFixedCents,
+});
 const createSchema = loanBase.extend({
   clientId: z.string(),
   lenderUserId: z.string().optional(),
@@ -57,22 +102,25 @@ export class LoansService {
     private settings: SettingsService,
   ) {}
 
-  defaults() {
-    return this.settings.get<LoanDefaults>(LOAN_DEFAULTS_KEY, LOAN_DEFAULTS);
+  async defaults(): Promise<LoanDefaults> {
+    // padrões salvos antes da cobrança por atraso longo não têm esses campos
+    return { ...LOAN_DEFAULTS, ...(await this.settings.get<Partial<LoanDefaults>>(LOAN_DEFAULTS_KEY, LOAN_DEFAULTS)) };
   }
 
-  async saveDefaults(u: AuthUser, b: LoanDefaults) {
+  async saveDefaults(u: AuthUser, raw: z.infer<typeof defaultsSchema>) {
+    const b: LoanDefaults = { ...raw, ...checkLongLate(pickLongLate(raw, LOAN_DEFAULTS)) };
     const saved = await this.settings.set(LOAN_DEFAULTS_KEY, b);
     await this.audit.log(u.id, 'UPDATE_LOAN_DEFAULTS', 'Setting', LOAN_DEFAULTS_KEY, { ...b });
     return saved;
   }
 
   /** Completa as opções não informadas com o padrão geral; sem multa, a % diária fica zerada. */
-  private async withDefaults<T extends z.infer<typeof loanBase>>(b: T): Promise<T & { multaDiaPercent: number; allowAmortization: boolean; allowLateFee: boolean }> {
+  private async withDefaults<T extends z.infer<typeof loanBase>>(b: T): Promise<T & LongLate & { multaDiaPercent: number; allowAmortization: boolean; allowLateFee: boolean }> {
     const def = await this.defaults();
     const allowLateFee = b.allowLateFee ?? def.allowLateFee;
     return {
       ...b,
+      ...checkLongLate(pickLongLate(b, def)),
       allowAmortization: b.allowAmortization ?? def.allowAmortization,
       allowLateFee,
       multaDiaPercent: allowLateFee ? (b.multaDiaPercent ?? def.multaDiaPercent) : 0,
@@ -88,17 +136,20 @@ export class LoansService {
       allowAmortization: b.allowAmortization ?? loan.allowAmortization,
       allowLateFee,
       // a % fica guardada mesmo com a multa desligada, para religar sem perder o valor combinado
-      multaDiaPercent: b.multaDiaPercent ?? (num(loan.multaDiaPercent) || (allowLateFee ? (await this.defaults()).multaDiaPercent : 0)),
+      // só puxa a % padrão quando a multa está sendo religada agora e não havia % guardada
+      multaDiaPercent: b.multaDiaPercent ?? (num(loan.multaDiaPercent) || (allowLateFee && !loan.allowLateFee ? (await this.defaults()).multaDiaPercent : 0)),
     };
+    const ll = checkLongLate(pickLongLate(b, longLateOf(loan)));
+    const longData = { longLateMode: ll.longLateMode, longLateAfterDays: ll.longLateAfterDays, longLatePercent: ll.longLatePercent, longLateFixed: d(ll.longLateFixedCents) };
     const asOf = today();
     await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.loan.update({ where: { id }, data, include: { installments: true } });
+      const updated = await tx.loan.update({ where: { id }, data: { ...data, ...longData }, include: { installments: true } });
       const eLoan = toEngineLoan(updated);
       for (const i of updated.installments.filter((x) => x.status === 'PENDENTE')) {
         const v = viewInstallment(toEngineInstallment(i), eLoan, asOf);
         await tx.installment.update({ where: { id: i.id }, data: { updatedValue: d(v.updatedCents), diasAtraso: v.diasAtraso, multaDiaPercent: allowLateFee ? data.multaDiaPercent : 0 } });
       }
-      await this.audit.log(u.id, 'UPDATE_OPTIONS', 'Loan', id, { before: { allowAmortization: loan.allowAmortization, allowLateFee: loan.allowLateFee, multaDiaPercent: num(loan.multaDiaPercent) }, after: data }, tx);
+      await this.audit.log(u.id, 'UPDATE_OPTIONS', 'Loan', id, { before: { allowAmortization: loan.allowAmortization, allowLateFee: loan.allowLateFee, multaDiaPercent: num(loan.multaDiaPercent), ...longLateOf(loan) }, after: { ...data, ...ll } }, tx);
     });
     await this.score.recompute(loan.clientId);
     return this.detail(u, id);
@@ -168,6 +219,10 @@ export class LoansService {
           multaDiaPercent: b.multaDiaPercent,
           allowAmortization: b.allowAmortization,
           allowLateFee: b.allowLateFee,
+          longLateMode: b.longLateMode,
+          longLateAfterDays: b.longLateAfterDays,
+          longLatePercent: b.longLatePercent,
+          longLateFixed: d(b.longLateFixedCents),
           method: b.method,
           type: b.type,
           installmentsCount: b.type === 'FIXED_INSTALLMENT' ? b.installmentsCount : null,
@@ -196,7 +251,7 @@ export class LoansService {
         data: { userId: lenderId, type: 'SAIDA_EMPRESTIMO', amount: d(-b.principalCents), description: `Empréstimo #${l.code} liberado`, loanId: l.id },
       });
       await tx.client.updateMany({ where: { id: b.clientId, responsibleUserId: null }, data: { responsibleUserId: lenderId } });
-      await this.audit.log(u.id, 'CREATE', 'Loan', l.id, { principalCents: b.principalCents, lenderId, riskAcknowledged: !!b.riskAcknowledged, allowAmortization: b.allowAmortization, allowLateFee: b.allowLateFee }, tx);
+      await this.audit.log(u.id, 'CREATE', 'Loan', l.id, { principalCents: b.principalCents, lenderId, riskAcknowledged: !!b.riskAcknowledged, allowAmortization: b.allowAmortization, allowLateFee: b.allowLateFee, longLateMode: b.longLateMode }, tx);
       return l;
     });
     await this.score.recompute(b.clientId);

@@ -38,7 +38,7 @@ describe('Opções do empréstimo: amortização e multa diária', () => {
     expect((await call(carlos, 'PUT', '/loans/settings', original)).status).toBe(403);
     expect((await call(gestor, 'PUT', '/loans/settings', original)).status).toBe(403);
     const saved = await ok(owner, 'PUT', '/loans/settings', { allowAmortization: false, allowLateFee: false, multaDiaPercent: 2 });
-    expect(saved).toEqual({ allowAmortization: false, allowLateFee: false, multaDiaPercent: 2 });
+    expect(saved).toMatchObject({ allowAmortization: false, allowLateFee: false, multaDiaPercent: 2, longLateMode: 'OFF', longLateAfterDays: 60 });
   });
 
   it('empréstimo novo herda o padrão: sem amortização e sem multa; amortização é recusada', async () => {
