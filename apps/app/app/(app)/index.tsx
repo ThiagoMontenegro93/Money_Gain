@@ -66,6 +66,11 @@ export default function Dashboard() {
             <StatCard label="Juros recebidos no mês" value={brl(d.jurosRecebidosMesCents)} icon="📈" color="#34D399" />
           </Grid>
 
+          <Grid cols={Math.min(cols, 2)}>
+            <StatCard testID="stat-multas-mes" label="Multas recebidas no mês" value={brl(d.multasRecebidasMesCents ?? 0)} icon="⏰" color="#F97316" sub={`Atraso longo: ${brl(d.atrasoLongoRecebidoMesCents ?? 0)}`} />
+            <StatCard testID="stat-atraso-longo" label="Atraso longo acumulado" value={brl(d.atrasoLongoAReceberCents ?? 0)} icon="🔥" color="#EF4444" sub={`${d.atrasoLongoEmprestimos ?? 0} empréstimo(s) · entra na quitação`} onPress={() => router.push('/loans')} />
+          </Grid>
+
           <Grid cols={cols}>
             <StatCard label="⭐ Clientes Bons" value={String(d.scoreCounts.BOM)} color={classColor.BOM} onPress={() => router.push('/clients?f=BOM')} />
             <StatCard label="🟡 Regulares" value={String(d.scoreCounts.REGULAR)} color={classColor.REGULAR} onPress={() => router.push('/clients?f=REGULAR')} />

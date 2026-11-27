@@ -65,6 +65,9 @@ export const api = {
   loans: {
     preview: (body: Omit<T.CreateLoanBody, 'clientId'>) => http.post<T.LoanPreview>('/loans/preview', body),
     creditCheck: (clientId: string) => http.get<T.CreditLock>('/loans/credit-check', { clientId }),
+    defaults: () => http.get<T.LoanDefaults>('/loans/settings'),
+    saveDefaults: (b: T.LoanDefaults) => http.put<T.LoanDefaults>('/loans/settings', b),
+    options: (id: string, b: T.LoanOptionsBody) => http.patch<T.LoanDetail>(`/loans/${enc(id)}/options`, b),
     create: (body: T.CreateLoanBody) => http.post<T.LoanDetail>('/loans', body),
     list: (q: { clientId?: string; status?: string; lenderUserId?: string } = {}) => http.get<T.LoanSummary[]>('/loans', q),
     get: (id: string) => http.get<T.LoanDetail>(`/loans/${enc(id)}`),

@@ -218,6 +218,12 @@ enum LoanType {
   FIXED_INSTALLMENT
 }
 
+enum LongLateMode {
+  OFF
+  PERCENT
+  FIXED
+}
+
 enum LoanStatus {
   ATIVO
   QUITADO
@@ -239,6 +245,15 @@ model Loan {
   principal       Decimal    @db.Decimal(14, 2)
   interestRate    Decimal    @db.Decimal(9, 4)
   multaDiaPercent Decimal    @default(0) @db.Decimal(9, 4)
+  /// Aceita amortização parcial do principal
+  allowAmortization Boolean  @default(true)
+  /// Cobra multa % ao dia por atraso (desligado: atraso só conta para o score)
+  allowLateFee    Boolean    @default(true)
+  /// Cobrança especial quando a parcela passa de N dias de atraso (% ao dia ou R$ fixo ao dia)
+  longLateMode      LongLateMode @default(OFF)
+  longLateAfterDays Int          @default(60)
+  longLatePercent   Decimal      @default(0) @db.Decimal(9, 4)
+  longLateFixed     Decimal      @default(0) @db.Decimal(14, 2)
   method          LoanMethod
   type            LoanType
   installmentsCount Int?
@@ -352,6 +367,8 @@ model Payment {
   principalPart  Decimal?      @db.Decimal(14, 2)
   interestPart   Decimal?      @db.Decimal(14, 2)
   finePart       Decimal?      @db.Decimal(14, 2)
+  /// Parte da multa que veio da cobrança por atraso longo
+  longLatePart   Decimal?      @db.Decimal(14, 2)
   extraPart      Decimal?      @db.Decimal(14, 2)
   commissionPart Decimal?      @db.Decimal(14, 2)
   resultMessage  String?

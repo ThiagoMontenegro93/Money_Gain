@@ -118,7 +118,7 @@ export function Segmented<V extends string>({ label, value, options, onChange, r
 
 export function Checkbox({ checked, onChange, label, testID }: { checked: boolean; onChange: (v: boolean) => void; label: React.ReactNode; testID?: string }) {
   return (
-    <Pressable testID={testID} onPress={() => onChange(!checked)} style={styles.check} accessibilityRole="checkbox" accessibilityState={{ checked }}>
+    <Pressable testID={testID} onPress={() => onChange(!checked)} style={styles.check} accessibilityRole="checkbox" accessibilityState={{ checked }} aria-checked={checked}>
       <View style={[styles.box2, checked && { backgroundColor: colors.primary, borderColor: colors.primary }]}>{checked ? <Text style={styles.tick}>✓</Text> : null}</View>
       <View style={{ flex: 1 }}>{typeof label === 'string' ? <Text style={styles.checkLabel}>{label}</Text> : label}</View>
     </Pressable>

@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
 import { SMTPServer } from 'smtp-server';
+import { todayISO } from '@lendcontrol/core';
 
 const API = process.env.API_URL ?? 'http://localhost:3000/api';
 const PASS = 'Lend@2026';
@@ -165,7 +166,7 @@ describe('Restauração', () => {
     let last = 1;
     pay.eachRow((r, n) => r.getCell(10).value && (last = n));
     const row = pay.getRow(last + 1);
-    row.getCell(1).value = new Date();
+    row.getCell(1).value = new Date(`${todayISO()}T00:00:00.000Z`); // data digitada no Excel (dia, sem hora)
     row.getCell(2).value = 'Cliente';
     row.getCell(3).value = loan.code;
     row.getCell(4).value = 'Juros';
@@ -186,6 +187,7 @@ describe('Restauração', () => {
     expect((await call(owner, 'POST', '/backups/restore', { token: pv.body.token, password: 'errada' })).status).toBe(401);
     const r = await ok(owner, 'POST', '/backups/restore', { token: pv.body.token, password: PASS });
     expect(r.message).toBe('✅ Sistema restaurado com sucesso');
+    expect(r.offlinePaymentsSkipped).toEqual([]);
     expect(r.offlinePaymentsCreated).toHaveLength(1);
     expect(r.reloginRequired).toBe(false);
     // token é de uso único

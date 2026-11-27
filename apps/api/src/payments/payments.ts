@@ -227,7 +227,9 @@ export class PaymentsService {
         const base = { userId: lender.id, loanId: loan.id, paymentId: id };
         if (a.principalCents) entries.push({ ...base, type: 'ENTRADA_PRINCIPAL', amount: d(a.principalCents), description: `${tag} - principal` });
         if (a.interestCents + a.extraCents) entries.push({ ...base, type: 'ENTRADA_JUROS', amount: d(a.interestCents + a.extraCents), description: `${tag} - juros` });
-        if (a.fineCents) entries.push({ ...base, type: 'ENTRADA_MULTA', amount: d(a.fineCents), description: `${tag} - multa por atraso` });
+        const longLate = a.longLateCents ?? 0;
+        if (a.fineCents - longLate) entries.push({ ...base, type: 'ENTRADA_MULTA', amount: d(a.fineCents - longLate), description: `${tag} - multa por atraso` });
+        if (longLate) entries.push({ ...base, type: 'ENTRADA_MULTA', amount: d(longLate), description: `${tag} - cobrança por atraso longo` });
         if (commission) entries.push({ ...base, type: 'COMISSAO', amount: d(commission), description: `${tag} - comissão ${num(lender.commissionPercent)}% sobre juros/multa (a receber do dono)` });
         if (entries.length) await tx.cashLedger.createMany({ data: entries });
 
@@ -241,6 +243,7 @@ export class PaymentsService {
             principalPart: d(a.principalCents),
             interestPart: d(a.interestCents),
             finePart: d(a.fineCents),
+            longLatePart: d(a.longLateCents ?? 0),
             extraPart: d(a.extraCents),
             commissionPart: d(commission),
             resultMessage: plan.message,

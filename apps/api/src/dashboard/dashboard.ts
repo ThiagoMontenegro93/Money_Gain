@@ -22,15 +22,20 @@ export class DashboardService {
       where: { ...loanScope, status: { in: ['ATIVO', 'PERDA'] } },
       include: { installments: true, client: { select: { fullName: true } } },
     });
-    let totalEmprestado = 0, totalAReceber = 0, totalPerda = 0;
+    let totalEmprestado = 0, totalAReceber = 0, totalPerda = 0, atrasoLongoAcumulado = 0, atrasoLongoLoans = 0;
     const upcoming: { loanId: string; clientName: string; dueDate: string; valueCents: number; number: number }[] = [];
     const limit = addDays(asOf, 7);
     for (const l of loans) {
       const eLoan = toEngineLoan(l);
       const eInst = l.installments.map(toEngineInstallment);
       totalEmprestado += eLoan.saldoDevedorCents;
-      const payoff = simulatePayoff(eLoan, eInst, asOf)?.amountCents ?? 0;
+      const quote = simulatePayoff(eLoan, eInst, asOf);
+      const payoff = quote?.amountCents ?? 0;
       totalAReceber += payoff;
+      if (quote?.longLateCents) {
+        atrasoLongoAcumulado += quote.longLateCents;
+        atrasoLongoLoans++;
+      }
       if (l.status === 'PERDA') totalPerda += payoff;
       for (const i of eInst.filter((x) => x.status === 'PENDENTE' && x.dueDate <= limit)) {
         upcoming.push({ loanId: l.id, clientName: l.client.fullName, dueDate: i.dueDate, valueCents: viewInstallment(i, eLoan, asOf).updatedCents, number: i.number });
@@ -42,7 +47,7 @@ export class DashboardService {
     const monthStart = asOf.slice(0, 8) + '01';
     const paidMonth = await this.prisma.payment.aggregate({
       where: { status: 'APROVADO', paidAt: { gte: new Date(monthStart) }, ...(admin ? {} : { loan: { lenderUserId: u.id } }) },
-      _sum: { interestPart: true, finePart: true, extraPart: true },
+      _sum: { interestPart: true, finePart: true, extraPart: true, longLatePart: true },
     });
     const users = await this.prisma.user.findMany({ where: admin ? { role: 'OPERATOR' } : { id: u.id } });
     const capComFunc = users.reduce((s, x) => s + c(x.capitalDisponivel) + c(x.capitalEmprestado), 0);
@@ -68,6 +73,12 @@ export class DashboardService {
       totalAReceberCents: totalAReceber,
       totalEmPerdaCents: totalPerda,
       jurosRecebidosMesCents: c(paidMonth._sum.interestPart) + c(paidMonth._sum.finePart) + c(paidMonth._sum.extraPart),
+      multasRecebidasMesCents: c(paidMonth._sum.finePart),
+      /** Quanto da multa recebida no mês veio da cobrança por atraso longo. */
+      atrasoLongoRecebidoMesCents: c(paidMonth._sum.longLatePart),
+      /** Cobrança por atraso longo já acumulada nos empréstimos em aberto (entra na quitação). */
+      atrasoLongoAReceberCents: atrasoLongoAcumulado,
+      atrasoLongoEmprestimos: atrasoLongoLoans,
       repassePendenteCents: repasse,
       comissaoAPagarCents: comissao,
       pendingApprovals: { payments: pPay, transfers: pTr },
