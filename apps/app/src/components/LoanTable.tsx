@@ -37,7 +37,7 @@ export function LoanTable({ loans, showClient = true, emptyText = 'Nenhum empré
     { key: 'code', title: 'Nº', width: 60, render: (l) => `#${l.code}` },
     ...(showClient ? [{ key: 'client', title: 'Cliente', flex: 2, minWidth: 150, render: (l: LoanSummary) => l.clientName }] : []),
     { key: 'lender', title: 'Funcionário', width: 120, render: (l) => l.lender?.name ?? '—' },
-    { key: 'type', title: 'Tipo', width: 170, render: (l) => `${LOAN_TYPE_LABEL[l.type] ?? l.type}` },
+    { key: 'type', title: 'Tipo', width: 170, minWidth: 100, render: (l) => `${LOAN_TYPE_LABEL[l.type] ?? l.type}` },
     { key: 'method', title: 'Taxa / Método', width: 130, render: (l) => `${l.ratePercent}% ${METHOD_LABEL[l.method as LoanMethod] ?? l.method}` },
     { key: 'principal', title: 'Principal', width: 120, align: 'right', render: (l) => brl(l.principalCents) },
     { key: 'saldo', title: 'Saldo devedor', width: 130, align: 'right', render: (l) => brl(l.saldoDevedorCents) },
@@ -47,7 +47,7 @@ export function LoanTable({ loans, showClient = true, emptyText = 'Nenhum empré
       </Text>
     ) },
     { key: 'overdue', title: 'Atraso', width: 110, render: (l) => (l.overdueCount ? <Badge size="sm" text={`${l.overdueCount} parc. · ${l.diasSemPagar}d`} bg={colors.dangerDark} color="#FFF" /> : <Text style={{ color: colors.textDim }}>—</Text>) },
-    { key: 'status', title: 'Status', width: 100, render: (l) => <StatusChip status={l.status} label={LOAN_STATUS_LABEL[l.status]} /> },
+    { key: 'status', title: 'Status', width: 110, minWidth: 92, render: (l) => <StatusChip status={l.status} label={LOAN_STATUS_LABEL[l.status]} /> },
   ];
   return <Table columns={cols} rows={loans} keyOf={(l) => l.id} onRowPress={(l) => router.push(`/loans/${l.id}`)} minWidth={showClient ? 1240 : 1100} empty={<Empty text={emptyText} icon="💰" />} />;
 }

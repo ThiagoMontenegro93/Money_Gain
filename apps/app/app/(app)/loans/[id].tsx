@@ -9,6 +9,8 @@ import { FileSlot } from '@/components/FileSlot';
 import { InstallmentTimeline } from '@/components/InstallmentTimeline';
 import { describeLongLate, draftFromLongLate, LongLateDraft, LongLateEditor, longLateFromDraft } from '@/components/LongLateEditor';
 import { PaymentList } from '@/components/PaymentList';
+import { RenegotiationModal } from '@/components/RenegotiationModal';
+import { SimulationModal } from '@/components/SimulationModal';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { Badge, Button, Card, Checkbox, ErrorState, InlineError, Input, KV, Loading, Modal, MoneyInput, Notice, ScoreBadge, Segmented, StatusChip, Stack } from '@/components/ui';
@@ -51,6 +53,8 @@ export default function LoanDetailScreen() {
   const { hasRole } = useAuth();
   const [optBusy, setOptBusy] = useState(false);
   const [llDraft, setLlDraft] = useState<LongLateDraft | null>(null);
+  const [renegOpen, setRenegOpen] = useState(false);
+  const [simOptOpen, setSimOptOpen] = useState(false);
   useEffect(() => {
     if (loan) setLlDraft(draftFromLongLate(loan));
   }, [loan]);
@@ -190,6 +194,23 @@ export default function LoanDetailScreen() {
       {pending ? <Notice tone="warning" text={`⏳ Há um recibo de ${brl(pending.valueCents)} (${PAYMENT_TYPE_LABEL[pending.type] ?? pending.type}) aguardando aprovação. Novos lançamentos ficam bloqueados até a decisão.`} /> : null}
       {loan.status === 'PERDA' ? <Notice tone="danger" text={`💀 Dias sem pagar: ${loan.diasSemPagar} dias - PERDA`} /> : null}
       {loan.status === 'QUITADO' ? <Notice tone="success" text={`✅ Quitado em ${dateBR(loan.quitadoEm)}`} /> : null}
+      {loan.renegotiatedTo ? (
+        <View testID="reneg-to" style={styles.renegBox}>
+          <Text style={styles.renegText}>
+            🤝 Renegociado em {dateBR(loan.renegotiatedTo.createdAt.slice(0, 10))} por {loan.renegotiatedTo.createdBy.name}: dívida de {brl(loan.renegotiatedTo.debtCents)} virou acordo de {brl(loan.renegotiatedTo.agreedCents)} em {loan.renegotiatedTo.installmentsCount}x. Prejuízo de capital: {brl(loan.renegotiatedTo.writeOffCents)}.
+          </Text>
+          <Text style={styles.renegText}>Motivo: {loan.renegotiatedTo.reason}</Text>
+          <Text style={styles.link} onPress={() => router.push(`/loans/${loan.renegotiatedTo!.newLoanId}`)}>Abrir o acordo (empréstimo #{loan.renegotiatedTo.newLoanCode}) ›</Text>
+        </View>
+      ) : null}
+      {loan.renegotiatedFrom ? (
+        <View testID="reneg-from" style={styles.renegBox}>
+          <Text style={styles.renegText}>
+            🤝 Acordo da negociação emergencial do empréstimo #{loan.renegotiatedFrom.oldLoanCode}: dívida de {brl(loan.renegotiatedFrom.debtCents)}, acordo de {brl(loan.renegotiatedFrom.agreedCents)}. Desconto concedido: {brl(loan.renegotiatedFrom.discountCents)}.
+          </Text>
+          <Text style={styles.link} onPress={() => router.push(`/loans/${loan.renegotiatedFrom!.oldLoanId}`)}>Ver a dívida original ›</Text>
+        </View>
+      ) : null}
 
       <Stack row={isDesktop} style={styles.row}>
         <Card title="Resumo" style={{ flex: 1 }}>
@@ -229,6 +250,10 @@ export default function LoanDetailScreen() {
                 />
               </View>
               {optBusy ? <Text style={{ color: colors.textMuted, fontSize: 12 }}>Salvando…</Text> : null}
+              <View style={styles.adminActions}>
+                <Button testID="open-simulation" title="Simular mudanças" icon="🧪" size="sm" variant="secondary" onPress={() => setSimOptOpen(true)} />
+                <Button testID="open-reneg" title="Negociação emergencial" icon="🤝" size="sm" variant="warning" disabled={!!pending} onPress={() => setRenegOpen(true)} />
+              </View>
             </View>
           ) : null}
           {loan.notes ? <KV k="Observações" v={loan.notes} /> : null}
@@ -259,6 +284,30 @@ export default function LoanDetailScreen() {
         </Card>
       </Stack>
 
+      {hasRole('ADMIN', 'SUPER_ADMIN') && active ? (
+        <>
+          <RenegotiationModal
+            loan={loan}
+            visible={renegOpen}
+            onClose={() => setRenegOpen(false)}
+            onDone={(novo) => {
+              setRenegOpen(false);
+              toast(`Acordo fechado: empréstimo #${novo.code}`);
+              router.replace(`/loans/${novo.id}`);
+            }}
+          />
+          <SimulationModal
+            loan={loan}
+            visible={simOptOpen}
+            onClose={() => setSimOptOpen(false)}
+            onApplied={() => {
+              setSimOptOpen(false);
+              toast('Mudanças aplicadas no empréstimo');
+              void reload();
+            }}
+          />
+        </>
+      ) : null}
       <Modal testID="simulate-modal" visible={simOpen} title="🧮 Simular Quitação" onClose={() => setSimOpen(false)} width={640}
         footer={<><Button title="Fechar" variant="secondary" onPress={() => setSimOpen(false)} /><Button testID="simulate-run" title="Simular" loading={simBusy} onPress={() => void simulate()} /></>}>
         <Text style={{ color: colors.text, marginBottom: 10, fontWeight: '600' }}>Quanto o cliente pagaria para quitar na data escolhida (com multa diária, se houver atraso).</Text>
@@ -305,6 +354,9 @@ export default function LoanDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  renegBox: { backgroundColor: 'rgba(124,58,237,0.12)', borderColor: '#7C3AED', borderWidth: 1, borderRadius: 12, padding: 12, gap: 6, marginBottom: 12 },
+  renegText: { color: colors.text, fontSize: 14, fontWeight: '600' },
+  adminActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
   optionsBox: { gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border },
   row: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   kvRow: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 18 },

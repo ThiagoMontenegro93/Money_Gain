@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { api } from '@/api';
 import { useAuth } from '@/auth/AuthContext';
 import { LoanTable } from '@/components/LoanTable';
@@ -17,6 +17,7 @@ const STATUSES = [
   { key: 'ATIVO', label: 'Ativos' },
   { key: 'QUITADO', label: 'Quitados' },
   { key: 'PERDA', label: '💀 Perda' },
+  { key: 'RENEGOCIADO', label: '🤝 Renegociados' },
   { key: 'CANCELADO', label: 'Cancelados' },
 ];
 
@@ -25,7 +26,8 @@ export default function LoansList() {
   const { hasRole } = useAuth();
   const { isDesktop } = useLayout();
   const users = useUsers();
-  const [status, setStatus] = useState('');
+  const { status: statusParam } = useLocalSearchParams<{ status?: string }>();
+  const [status, setStatus] = useState(STATUSES.some((s) => s.key === statusParam) ? String(statusParam) : '');
   const [lender, setLender] = useState<string | null>(null);
   const { data, error, loading, reload } = useAsync(() => api.loans.list({ status: status || undefined, lenderUserId: lender ?? undefined }), [status, lender]);
   const total = (data ?? []).reduce((s, l) => s + (l.status === 'ATIVO' || l.status === 'PERDA' ? l.saldoDevedorCents : 0), 0);

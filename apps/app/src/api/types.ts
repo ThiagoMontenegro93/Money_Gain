@@ -155,7 +155,7 @@ export interface CepResult {
 
 export type FidelityBody = { kind: 'DISCOUNT'; loanId: string; newRatePercent: number } | { kind: 'LIMIT'; newLimitCents: number };
 
-export type LoanStatus = 'ATIVO' | 'QUITADO' | 'PERDA' | 'CANCELADO';
+export type LoanStatus = 'ATIVO' | 'QUITADO' | 'PERDA' | 'CANCELADO' | 'RENEGOCIADO';
 
 export interface CreateLoanBody {
   clientId: string;
@@ -252,6 +252,10 @@ export interface PaymentDTO {
 export interface LoanDetail extends LoanSummary {
   installments: (InstallmentView & { id: string })[];
   quote: LoanQuote;
+  /** Este empréstimo foi fechado por negociação emergencial (aponta para o acordo). */
+  renegotiatedTo?: RenegotiationDTO | null;
+  /** Este empréstimo é o acordo de uma negociação emergencial. */
+  renegotiatedFrom?: RenegotiationDTO | null;
   payments: PaymentDTO[];
   client: ClientListItem;
 }
@@ -334,6 +338,7 @@ export interface DashboardDTO {
   atrasoLongoRecebidoMesCents?: number;
   atrasoLongoAReceberCents?: number;
   atrasoLongoEmprestimos?: number;
+  renegociacoesMes?: { count: number; acordadoCents: number; prejuizoCents: number; descontoCents: number };
   repassePendenteCents: number;
   comissaoAPagarCents: number;
   pendingApprovals: { payments: number; transfers: number };
@@ -492,6 +497,51 @@ export interface RestoreResult {
 }
 
 /** Padrão geral para novos empréstimos. */
+export interface RenegotiationBody {
+  agreedCents: number;
+  installmentsCount: number;
+  method: LoanMethod;
+  firstDueDate: string;
+  allowLateFee?: boolean;
+  multaDiaPercent?: number;
+  reason?: string;
+}
+export interface RenegotiationPreview {
+  debtCents: number;
+  saldoDevedorCents: number;
+  agreedCents: number;
+  principalCents: number;
+  revenueCents: number;
+  writeOffCents: number;
+  discountCents: number;
+  recoveryPercent: number;
+  dueDate: string;
+  installments: { number: number; dueDate: string; valueCents: number; principalCents: number; interestCents: number }[];
+}
+export interface RenegotiationDTO {
+  id: string;
+  code: number;
+  oldLoanId: string;
+  oldLoanCode: number;
+  newLoanId: string;
+  newLoanCode: number;
+  newLoanStatus: string;
+  clientId: string;
+  clientName: string;
+  debtCents: number;
+  saldoDevedorCents: number;
+  agreedCents: number;
+  installmentsCount: number;
+  method: LoanMethod;
+  firstDueDate: string;
+  writeOffCents: number;
+  discountCents: number;
+  reason: string;
+  createdBy: Ref;
+  createdAt: string;
+}
+export type SimulateBody = LoanOptionsBody & { ratePercent?: number; asOf?: string };
+
 export type LongLateMode = 'OFF' | 'PERCENT' | 'FIXED';
 /** Cobrança especial quando a parcela passa de N dias de atraso. */
 export interface LongLate { longLateMode: LongLateMode; longLateAfterDays: number; longLatePercent: number; longLateFixedCents: number }

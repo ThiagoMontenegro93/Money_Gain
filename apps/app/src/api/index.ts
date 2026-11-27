@@ -1,4 +1,4 @@
-import type { ClientForm, ImportResult, LoanQuote } from '@lendcontrol/core';
+import type { ClientForm, ImportResult, LoanQuote, SimulationResult } from '@lendcontrol/core';
 import { fetchBlob, http } from './http';
 import type * as T from './types';
 
@@ -72,6 +72,10 @@ export const api = {
     list: (q: { clientId?: string; status?: string; lenderUserId?: string } = {}) => http.get<T.LoanSummary[]>('/loans', q),
     get: (id: string) => http.get<T.LoanDetail>(`/loans/${enc(id)}`),
     quote: (id: string, asOf?: string) => http.get<LoanQuote>(`/loans/${enc(id)}/quote`, { asOf }),
+    renegotiatePreview: (id: string, b: T.RenegotiationBody) => http.post<T.RenegotiationPreview>(`/loans/${enc(id)}/renegotiate/preview`, b),
+    renegotiate: (id: string, b: T.RenegotiationBody & { reason: string; password: string }) => http.post<T.LoanDetail>(`/loans/${enc(id)}/renegotiate`, b),
+    renegotiations: (clientId?: string) => http.get<T.RenegotiationDTO[]>('/loans/renegotiations/list', { clientId }),
+    simulate: (id: string, b: T.SimulateBody) => http.post<SimulationResult>(`/loans/${enc(id)}/simulate`, b),
   },
   payments: {
     create: (body: T.CreatePaymentBody) => http.post<T.PaymentDTO>('/payments', body),

@@ -6,3 +6,5 @@ export * from './score';
 export * from './clientForm';
 export * from './whatsappParser';
 export * from './messaging';
+export * from './renegotiation';
+export * from './simulation';

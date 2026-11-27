@@ -57,7 +57,7 @@ export const LOAN_TYPE_LABEL: Record<string, string> = {
   FIXED_INSTALLMENT: 'Parcela fixa (Price)',
 };
 
-export const LOAN_STATUS_LABEL: Record<string, string> = { ATIVO: 'Ativo', QUITADO: 'Quitado', PERDA: 'Perda', CANCELADO: 'Cancelado' };
+export const LOAN_STATUS_LABEL: Record<string, string> = { ATIVO: 'Ativo', QUITADO: 'Quitado', PERDA: 'Perda', CANCELADO: 'Cancelado', RENEGOCIADO: 'Renegociado' };
 export const CLIENT_STATUS_LABEL: Record<string, string> = { RASCUNHO: 'Rascunho', ATIVO: 'Ativo', INATIVO: 'Inativo' };
 
 export const MESSAGE_STATUS_LABEL: Record<string, string> = {

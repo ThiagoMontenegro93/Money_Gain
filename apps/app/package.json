@@ -16,6 +16,7 @@
     "test:fase3": "node e2e/fase3.js ../../docs/screenshots",
     "test:opcoes": "node e2e/opcoes.js ../../docs/screenshots",
     "test:atraso-longo": "node e2e/atraso-longo.js ../../docs/screenshots",
+    "test:renegociacao": "node e2e/renegociacao.js ../../docs/screenshots",
     "test:offline": "node e2e/offline.js ../../docs/screenshots"
   },
   "dependencies": {

@@ -15,6 +15,7 @@ import { DashboardController, DashboardService } from './dashboard/dashboard';
 import { FilesController, FilesService } from './files/files';
 import { JobsController, JobsService } from './jobs/jobs';
 import { LoansController, LoansService } from './loans/loans';
+import { RenegotiationController, RenegotiationService } from './loans/renegotiation';
 import { PaymentsController, PaymentsService } from './payments/payments';
 import { UsersController, UsersService } from './users/users';
 import { WalletsController, WalletsService } from './wallets/wallets';
@@ -39,6 +40,7 @@ if (jwtSecret.length < 32) throw new Error('JWT_SECRET deve ter ao menos 32 cara
     UsersController,
     ClientsController,
     LoansController,
+    RenegotiationController,
     PaymentsController,
     WalletsController,
     FilesController,
@@ -56,6 +58,7 @@ if (jwtSecret.length < 32) throw new Error('JWT_SECRET deve ter ao menos 32 cara
     ScoreService,
     ClientsService,
     LoansService,
+    RenegotiationService,
     PaymentsService,
     WalletsService,
     FilesService,

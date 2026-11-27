@@ -22,37 +22,37 @@ enum Role {
 }
 
 model User {
-  id                 String   @id @default(cuid())
-  name               String
-  email              String   @unique
-  phone              String?
+  id                String   @id @default(cuid())
+  name              String
+  email             String   @unique
+  phone             String?
   /// Chave PIX do credor usada nas mensagens ({pix_chave})
-  pixKey             String?
-  passwordHash       String
-  role               Role     @default(OPERATOR)
-  isActive           Boolean  @default(true)
+  pixKey            String?
+  passwordHash      String
+  role              Role     @default(OPERATOR)
+  isActive          Boolean  @default(true)
   /// % de comissão do funcionário sobre juros + multa recebidos (ex.: 30)
-  commissionPercent  Decimal  @default(30) @db.Decimal(5, 2)
+  commissionPercent Decimal  @default(30) @db.Decimal(5, 2)
   /// Modo revolving: principal devolvido volta para o funcionário re-emprestar
-  revolving          Boolean  @default(true)
+  revolving         Boolean  @default(true)
   // Carteira (employee_wallets) - mantida em colunas para leitura rápida; o razão é CashLedger
-  capitalDisponivel  Decimal  @default(0) @db.Decimal(14, 2)
-  capitalEmprestado  Decimal  @default(0) @db.Decimal(14, 2)
-  comissaoAPagar     Decimal  @default(0) @db.Decimal(14, 2)
+  capitalDisponivel Decimal  @default(0) @db.Decimal(14, 2)
+  capitalEmprestado Decimal  @default(0) @db.Decimal(14, 2)
+  comissaoAPagar    Decimal  @default(0) @db.Decimal(14, 2)
   /// Recebido de clientes que ainda deve ser repassado ao dono
-  paraRepassar       Decimal  @default(0) @db.Decimal(14, 2)
-  recebidoClientes   Decimal  @default(0) @db.Decimal(14, 2)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  paraRepassar      Decimal  @default(0) @db.Decimal(14, 2)
+  recebidoClientes  Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  clientsResponsible Client[]          @relation("ClientResponsible")
-  loansFunded        Loan[]            @relation("LoanFunder")
-  loansLent          Loan[]            @relation("LoanLender")
-  paymentsCreated    Payment[]         @relation("PaymentCreatedBy")
-  paymentsApproved   Payment[]         @relation("PaymentApprovedBy")
-  transfersFrom      CapitalTransfer[] @relation("TransferFrom")
-  transfersTo        CapitalTransfer[] @relation("TransferTo")
-  transfersApproved  CapitalTransfer[] @relation("TransferApprovedBy")
+  clientsResponsible Client[]            @relation("ClientResponsible")
+  loansFunded        Loan[]              @relation("LoanFunder")
+  loansLent          Loan[]              @relation("LoanLender")
+  paymentsCreated    Payment[]           @relation("PaymentCreatedBy")
+  paymentsApproved   Payment[]           @relation("PaymentApprovedBy")
+  transfersFrom      CapitalTransfer[]   @relation("TransferFrom")
+  transfersTo        CapitalTransfer[]   @relation("TransferTo")
+  transfersApproved  CapitalTransfer[]   @relation("TransferApprovedBy")
   ledger             CashLedger[]
   auditLogs          AuditLog[]
   files              StoredFile[]
@@ -60,6 +60,7 @@ model User {
   clientHistory      ClientHistory[]
   messages           MessageLog[]
   documentViews      DocumentViewLog[]
+  renegotiations     Renegotiation[]     @relation("RenegCreatedBy")
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +97,7 @@ model Client {
   fullName     String
   /// CPF criptografado (AES-256-GCM) + hash HMAC para unicidade/busca + últimos dígitos para exibição
   cpfEncrypted String?
-  cpfHash      String?  @unique
+  cpfHash      String?   @unique
   cpfLast      String?
   rg           String?
   rgIssuer     String?
@@ -113,66 +114,66 @@ model Client {
   complement    String?
   district      String?
   city          String?
-  state         String?   @db.Char(2)
+  state         String? @db.Char(2)
   reference     String?
   residenceTime String?
 
   // Aba 3 - Financeiro
-  pixKey          String?
-  pixType         String?
-  profession      String?
-  income          Decimal? @db.Decimal(14, 2)
-  workplace       String?
-  internalScore   Int?
-  creditLimit     Decimal? @db.Decimal(14, 2)
+  pixKey        String?
+  pixType       String?
+  profession    String?
+  income        Decimal? @db.Decimal(14, 2)
+  workplace     String?
+  internalScore Int?
+  creditLimit   Decimal? @db.Decimal(14, 2)
 
   // Aba 4 - Vínculos
-  emergencyName      String?
-  emergencyRelation  String?
-  emergencyPhone1    String?
-  emergencyPhone2    String?
-  hasGuarantor       Boolean @default(false)
-  guarantorName      String?
+  emergencyName         String?
+  emergencyRelation     String?
+  emergencyPhone1       String?
+  emergencyPhone2       String?
+  hasGuarantor          Boolean  @default(false)
+  guarantorName         String?
   guarantorCpfEncrypted String?
-  guarantorCpfLast   String?
-  guarantorPhone     String?
-  guarantorRelation  String?
-  guarantorClientId  String?
-  guarantorClient    Client?  @relation("ClientGuarantor", fields: [guarantorClientId], references: [id])
-  guaranteedClients  Client[] @relation("ClientGuarantor")
-  guarantorDocFileId String?
-  referrerName       String?
-  referrerPhone      String?
-  referrerClientId   String?
-  referrerClient     Client?  @relation("ClientReferrer", fields: [referrerClientId], references: [id])
-  referredClients    Client[] @relation("ClientReferrer")
+  guarantorCpfLast      String?
+  guarantorPhone        String?
+  guarantorRelation     String?
+  guarantorClientId     String?
+  guarantorClient       Client?  @relation("ClientGuarantor", fields: [guarantorClientId], references: [id])
+  guaranteedClients     Client[] @relation("ClientGuarantor")
+  guarantorDocFileId    String?
+  referrerName          String?
+  referrerPhone         String?
+  referrerClientId      String?
+  referrerClient        Client?  @relation("ClientReferrer", fields: [referrerClientId], references: [id])
+  referredClients       Client[] @relation("ClientReferrer")
 
   // Score automático (seção 7)
-  score            Int         @default(5)
-  classificacao    ClientScore @default(REGULAR)
+  score          Int         @default(5)
+  classificacao  ClientScore @default(REGULAR)
   /// 0..1
-  pontualidade     Decimal?    @db.Decimal(5, 4)
-  diasSemPagar     Int         @default(0)
-  lastPaymentAt    DateTime?   @db.Date
-  scoreUpdatedAt   DateTime?
+  pontualidade   Decimal?    @db.Decimal(5, 4)
+  diasSemPagar   Int         @default(0)
+  lastPaymentAt  DateTime?   @db.Date
+  scoreUpdatedAt DateTime?
   /// Restringir novos empréstimos (marcado automaticamente para PERDA)
-  isBlocked        Boolean     @default(false)
-  blockedReason    String?
+  isBlocked      Boolean     @default(false)
+  blockedReason  String?
   /// Desbloqueio manual pelo Super Admin (evita rebloqueio automático até nova perda)
-  unblockedAt      DateTime?
-  unblockedById    String?
+  unblockedAt    DateTime?
+  unblockedById  String?
 
   // WhatsApp / cobrança
-  whatsappOptOut   Boolean     @default(false)
-  negativadoEm     DateTime?
-  negativadoPorId  String?
+  whatsappOptOut  Boolean   @default(false)
+  negativadoEm    DateTime?
+  negativadoPorId String?
 
   // LGPD
-  lgpdConsentAt    DateTime?
+  lgpdConsentAt      DateTime?
   lgpdConsentVersion String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   loans              Loan[]
@@ -229,52 +230,56 @@ enum LoanStatus {
   QUITADO
   PERDA
   CANCELADO
+  /// Dívida fechada por negociação emergencial (vira um acordo em outro empréstimo)
+  RENEGOCIADO
 }
 
 model Loan {
-  id              String     @id @default(cuid())
-  code            Int        @unique @default(autoincrement())
-  clientId        String
-  client          Client     @relation(fields: [clientId], references: [id])
+  id                String         @id @default(cuid())
+  code              Int            @unique @default(autoincrement())
+  clientId          String
+  client            Client         @relation(fields: [clientId], references: [id])
   /// Quem fornece o capital (normalmente o dono)
-  funderUserId    String
-  funder          User       @relation("LoanFunder", fields: [funderUserId], references: [id])
+  funderUserId      String
+  funder            User           @relation("LoanFunder", fields: [funderUserId], references: [id])
   /// Quem emprestou e cobra o cliente (funcionário ou o próprio dono)
-  lenderUserId    String
-  lender          User       @relation("LoanLender", fields: [lenderUserId], references: [id])
-  principal       Decimal    @db.Decimal(14, 2)
-  interestRate    Decimal    @db.Decimal(9, 4)
-  multaDiaPercent Decimal    @default(0) @db.Decimal(9, 4)
+  lenderUserId      String
+  lender            User           @relation("LoanLender", fields: [lenderUserId], references: [id])
+  principal         Decimal        @db.Decimal(14, 2)
+  interestRate      Decimal        @db.Decimal(9, 4)
+  multaDiaPercent   Decimal        @default(0) @db.Decimal(9, 4)
   /// Aceita amortização parcial do principal
-  allowAmortization Boolean  @default(true)
+  allowAmortization Boolean        @default(true)
   /// Cobra multa % ao dia por atraso (desligado: atraso só conta para o score)
-  allowLateFee    Boolean    @default(true)
+  allowLateFee      Boolean        @default(true)
   /// Cobrança especial quando a parcela passa de N dias de atraso (% ao dia ou R$ fixo ao dia)
-  longLateMode      LongLateMode @default(OFF)
-  longLateAfterDays Int          @default(60)
-  longLatePercent   Decimal      @default(0) @db.Decimal(9, 4)
-  longLateFixed     Decimal      @default(0) @db.Decimal(14, 2)
-  method          LoanMethod
-  type            LoanType
+  longLateMode      LongLateMode   @default(OFF)
+  longLateAfterDays Int            @default(60)
+  longLatePercent   Decimal        @default(0) @db.Decimal(9, 4)
+  longLateFixed     Decimal        @default(0) @db.Decimal(14, 2)
+  method            LoanMethod
+  type              LoanType
   installmentsCount Int?
-  releaseDate     DateTime   @db.Date
+  releaseDate       DateTime       @db.Date
   /// Vencimento da quitação prevista / última parcela
-  dueDate         DateTime   @db.Date
-  status          LoanStatus @default(ATIVO)
-  saldoDevedor    Decimal    @db.Decimal(14, 2)
+  dueDate           DateTime       @db.Date
+  status            LoanStatus     @default(ATIVO)
+  saldoDevedor      Decimal        @db.Decimal(14, 2)
   /// Empréstimo gerado por projeção/renegociação de outro
-  isProjection    Boolean    @default(false)
-  parentLoanId    String?
-  parentLoan      Loan?      @relation("LoanParent", fields: [parentLoanId], references: [id])
-  childLoans      Loan[]     @relation("LoanParent")
-  riskAcknowledged Boolean   @default(false)
-  notes           String?
-  quitadoEm       DateTime?  @db.Date
+  isProjection      Boolean        @default(false)
+  parentLoanId      String?
+  parentLoan        Loan?          @relation("LoanParent", fields: [parentLoanId], references: [id])
+  childLoans        Loan[]         @relation("LoanParent")
+  renegotiatedTo    Renegotiation? @relation("RenegOld")
+  renegotiatedFrom  Renegotiation? @relation("RenegNew")
+  riskAcknowledged  Boolean        @default(false)
+  notes             String?
+  quitadoEm         DateTime?      @db.Date
   /// Controle de concorrência otimista
-  version         Int        @default(0)
-  createdById     String
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  version           Int            @default(0)
+  createdById       String
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
 
   installments Installment[]
   payments     Payment[]
@@ -342,38 +347,38 @@ enum PaymentStatus {
 }
 
 model Payment {
-  id             String        @id @default(cuid())
-  loanId         String
-  loan           Loan          @relation(fields: [loanId], references: [id])
-  installmentId  String?
-  installment    Installment?  @relation(fields: [installmentId], references: [id])
-  type           PaymentType
-  status         PaymentStatus @default(AGUARDANDO_APROVACAO)
-  value          Decimal       @db.Decimal(14, 2)
+  id                String        @id @default(cuid())
+  loanId            String
+  loan              Loan          @relation(fields: [loanId], references: [id])
+  installmentId     String?
+  installment       Installment?  @relation(fields: [installmentId], references: [id])
+  type              PaymentType
+  status            PaymentStatus @default(AGUARDANDO_APROVACAO)
+  value             Decimal       @db.Decimal(14, 2)
   /// Valor esperado calculado no lançamento (para conferência do aprovador)
-  expectedValue  Decimal?      @db.Decimal(14, 2)
+  expectedValue     Decimal?      @db.Decimal(14, 2)
   /// Data em que o cliente pagou (base da multa)
-  paidAt         DateTime      @db.Date
-  comprovanteUrl String?
+  paidAt            DateTime      @db.Date
+  comprovanteUrl    String?
   comprovanteFileId String?
-  notes          String?
-  createdById    String
-  createdBy      User          @relation("PaymentCreatedBy", fields: [createdById], references: [id])
-  approvedById   String?
-  approvedBy     User?         @relation("PaymentApprovedBy", fields: [approvedById], references: [id])
-  approvedAt     DateTime?
-  rejectionReason String?
+  notes             String?
+  createdById       String
+  createdBy         User          @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+  approvedById      String?
+  approvedBy        User?         @relation("PaymentApprovedBy", fields: [approvedById], references: [id])
+  approvedAt        DateTime?
+  rejectionReason   String?
   // Alocação calculada na aprovação
-  principalPart  Decimal?      @db.Decimal(14, 2)
-  interestPart   Decimal?      @db.Decimal(14, 2)
-  finePart       Decimal?      @db.Decimal(14, 2)
+  principalPart     Decimal?      @db.Decimal(14, 2)
+  interestPart      Decimal?      @db.Decimal(14, 2)
+  finePart          Decimal?      @db.Decimal(14, 2)
   /// Parte da multa que veio da cobrança por atraso longo
-  longLatePart   Decimal?      @db.Decimal(14, 2)
-  extraPart      Decimal?      @db.Decimal(14, 2)
-  commissionPart Decimal?      @db.Decimal(14, 2)
-  resultMessage  String?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  longLatePart      Decimal?      @db.Decimal(14, 2)
+  extraPart         Decimal?      @db.Decimal(14, 2)
+  commissionPart    Decimal?      @db.Decimal(14, 2)
+  resultMessage     String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   receipts ClientReceipt[]
   ledger   CashLedger[]
@@ -400,21 +405,21 @@ enum TransferStatus {
 }
 
 model CapitalTransfer {
-  id           String         @id @default(cuid())
-  fromUserId   String
-  from         User           @relation("TransferFrom", fields: [fromUserId], references: [id])
-  toUserId     String
-  to           User           @relation("TransferTo", fields: [toUserId], references: [id])
-  value        Decimal        @db.Decimal(14, 2)
-  type         TransferType
-  status       TransferStatus @default(AGUARDANDO_APROVACAO)
-  notes        String?
+  id                String         @id @default(cuid())
+  fromUserId        String
+  from              User           @relation("TransferFrom", fields: [fromUserId], references: [id])
+  toUserId          String
+  to                User           @relation("TransferTo", fields: [toUserId], references: [id])
+  value             Decimal        @db.Decimal(14, 2)
+  type              TransferType
+  status            TransferStatus @default(AGUARDANDO_APROVACAO)
+  notes             String?
   comprovanteFileId String?
-  approvedById String?
-  approvedBy   User?          @relation("TransferApprovedBy", fields: [approvedById], references: [id])
-  approvedAt   DateTime?
-  rejectionReason String?
-  createdAt    DateTime       @default(now())
+  approvedById      String?
+  approvedBy        User?          @relation("TransferApprovedBy", fields: [approvedById], references: [id])
+  approvedAt        DateTime?
+  rejectionReason   String?
+  createdAt         DateTime       @default(now())
 
   ledger CashLedger[]
 
@@ -433,23 +438,54 @@ enum LedgerType {
   DEVOLUCAO_CAPITAL
   PAGAMENTO_COMISSAO
   AJUSTE
+  /// Capital que não volta por causa de uma negociação emergencial
+  PERDA_RENEGOCIACAO
+}
+
+/// Negociação emergencial: dívida antiga encerrada e trocada por um acordo menor/parcelado
+model Renegotiation {
+  id                String     @id @default(cuid())
+  code              Int        @unique @default(autoincrement())
+  oldLoanId         String     @unique
+  oldLoan           Loan       @relation("RenegOld", fields: [oldLoanId], references: [id])
+  newLoanId         String     @unique
+  newLoan           Loan       @relation("RenegNew", fields: [newLoanId], references: [id])
+  clientId          String
+  /// Dívida atualizada no dia do acordo (saldo + juros + multas)
+  debtValue         Decimal    @db.Decimal(14, 2)
+  saldoDevedor      Decimal    @db.Decimal(14, 2)
+  agreedValue       Decimal    @db.Decimal(14, 2)
+  installmentsCount Int
+  method            LoanMethod
+  firstDueDate      DateTime   @db.Date
+  /// Capital que não volta
+  writeOff          Decimal    @db.Decimal(14, 2)
+  /// Dívida perdoada (dívida - acordo)
+  discount          Decimal    @db.Decimal(14, 2)
+  reason            String
+  createdById       String
+  createdBy         User       @relation("RenegCreatedBy", fields: [createdById], references: [id])
+  createdAt         DateTime   @default(now())
+
+  @@index([clientId])
+  @@index([createdAt])
 }
 
 /// Razão de caixa imutável (append-only). amount > 0 entrada, < 0 saída na carteira do usuário.
 model CashLedger {
-  id         String     @id @default(cuid())
-  userId     String
-  user       User       @relation(fields: [userId], references: [id])
-  type       LedgerType
-  amount     Decimal    @db.Decimal(14, 2)
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id])
+  type        LedgerType
+  amount      Decimal          @db.Decimal(14, 2)
   description String
-  loanId     String?
-  loan       Loan?      @relation(fields: [loanId], references: [id])
-  paymentId  String?
-  payment    Payment?   @relation(fields: [paymentId], references: [id])
-  transferId String?
-  transfer   CapitalTransfer? @relation(fields: [transferId], references: [id])
-  createdAt  DateTime   @default(now())
+  loanId      String?
+  loan        Loan?            @relation(fields: [loanId], references: [id])
+  paymentId   String?
+  payment     Payment?         @relation(fields: [paymentId], references: [id])
+  transferId  String?
+  transfer    CapitalTransfer? @relation(fields: [transferId], references: [id])
+  createdAt   DateTime         @default(now())
 
   @@index([userId, createdAt])
 }
@@ -482,19 +518,19 @@ enum DocumentType {
 }
 
 model Document {
-  id         String       @id @default(cuid())
-  clientId   String
-  client     Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  type       DocumentType
-  fileId     String
+  id           String       @id @default(cuid())
+  clientId     String
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  type         DocumentType
+  fileId       String
   /// URL privada; acesso apenas por URL assinada de 5 minutos
-  fileUrl    String
-  notes      String?
-  isVerified Boolean      @default(false)
+  fileUrl      String
+  notes        String?
+  isVerified   Boolean      @default(false)
   verifiedById String?
-  verifiedAt DateTime?
-  expiryDate DateTime?    @db.Date
-  createdAt  DateTime     @default(now())
+  verifiedAt   DateTime?
+  expiryDate   DateTime?    @db.Date
+  createdAt    DateTime     @default(now())
 
   viewLogs DocumentViewLog[]
 
@@ -518,20 +554,20 @@ enum ReceiptStatus {
 
 /// Comprovantes enviados pelo cliente (galeria 2)
 model ClientReceipt {
-  id          String        @id @default(cuid())
-  clientId    String
-  client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  fileId      String
-  sentAt      DateTime
-  informedValue Decimal?    @db.Decimal(14, 2)
-  status      ReceiptStatus @default(PENDENTE_CONFERENCIA)
-  notes       String?
-  createdById String?
-  checkedById String?
-  checkedAt   DateTime?
-  paymentId   String?
-  payment     Payment?      @relation(fields: [paymentId], references: [id])
-  createdAt   DateTime      @default(now())
+  id            String        @id @default(cuid())
+  clientId      String
+  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  fileId        String
+  sentAt        DateTime
+  informedValue Decimal?      @db.Decimal(14, 2)
+  status        ReceiptStatus @default(PENDENTE_CONFERENCIA)
+  notes         String?
+  createdById   String?
+  checkedById   String?
+  checkedAt     DateTime?
+  paymentId     String?
+  payment       Payment?      @relation(fields: [paymentId], references: [id])
+  createdAt     DateTime      @default(now())
 }
 
 // ---------------------------------------------------------------------------
@@ -581,7 +617,7 @@ model AuditLog {
 }
 
 model Notification {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String?
   /// null = todos os SUPER_ADMIN
   role      Role?
@@ -589,7 +625,7 @@ model Notification {
   message   String
   readAt    DateTime?
   data      Json?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 }
 
 model Setting {
