@@ -18,7 +18,7 @@ import { PrismaService } from '../common/prisma.service';
 import { d, dt, num, today, ZodPipe } from '../common/util';
 import { ClientsService, creditLockFor } from '../clients/clients.service';
 import { ScoreService } from '../clients/score.service';
-import { longLateOf, loanInclude, loanSummary, loanViews, paymentDTO, paymentInclude, toEngineInstallment, toEngineLoan } from './loan-mapper';
+import { longLateOf, loanInclude, renegDTO, loanSummary, loanViews, paymentDTO, paymentInclude, toEngineInstallment, toEngineLoan } from './loan-mapper';
 
 const longLateFields = {
   longLateMode: z.enum(['OFF', 'PERCENT', 'FIXED']).optional(),
@@ -285,7 +285,19 @@ export class LoansService {
     const asOf = today();
     const payments = await this.prisma.payment.findMany({ where: { loanId: id }, include: paymentInclude, orderBy: { createdAt: 'desc' } });
     const client = await this.clients.item(loan.clientId);
-    return { ...loanSummary(loan, asOf), ...loanViews(loan, asOf), payments: payments.map(paymentDTO), client };
+    const renegInclude = { oldLoan: { select: { code: true, client: { select: { fullName: true } } } }, newLoan: { select: { code: true, status: true } }, createdBy: { select: { id: true, name: true } } } as const;
+    const [renegotiatedTo, renegotiatedFrom] = await Promise.all([
+      this.prisma.renegotiation.findUnique({ where: { oldLoanId: id }, include: renegInclude }),
+      this.prisma.renegotiation.findUnique({ where: { newLoanId: id }, include: renegInclude }),
+    ]);
+    return {
+      ...loanSummary(loan, asOf),
+      ...loanViews(loan, asOf),
+      payments: payments.map(paymentDTO),
+      client,
+      renegotiatedTo: renegotiatedTo ? renegDTO(renegotiatedTo) : null,
+      renegotiatedFrom: renegotiatedFrom ? renegDTO(renegotiatedFrom) : null,
+    };
   }
 
   async quote(u: AuthUser, id: string, asOf?: string) {

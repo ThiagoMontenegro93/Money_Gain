@@ -17,7 +17,7 @@ import { Cents, formatBRL, pct, roundCents } from './money';
 
 export type LoanMethod = 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
 export type LoanType = 'INTEREST_ONLY' | 'FIXED_INSTALLMENT';
-export type LoanStatus = 'ATIVO' | 'QUITADO' | 'PERDA' | 'CANCELADO';
+export type LoanStatus = 'ATIVO' | 'QUITADO' | 'PERDA' | 'CANCELADO' | 'RENEGOCIADO';
 export type InstallmentType = 'QUITACAO_PREVISTA' | 'PROJECAO_JUROS' | 'PARCELA_FIXA';
 export type InstallmentStatus = 'PENDENTE' | 'PAGA' | 'CANCELADA';
 export type PaymentType = 'JUROS' | 'QUITACAO' | 'AMORTIZACAO' | 'PARCELA';

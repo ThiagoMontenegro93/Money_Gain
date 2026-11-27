@@ -49,6 +49,11 @@ export class DashboardService {
       where: { status: 'APROVADO', paidAt: { gte: new Date(monthStart) }, ...(admin ? {} : { loan: { lenderUserId: u.id } }) },
       _sum: { interestPart: true, finePart: true, extraPart: true, longLatePart: true },
     });
+    const renegMonth = await this.prisma.renegotiation.aggregate({
+      where: { createdAt: { gte: new Date(monthStart) }, ...(admin ? {} : { oldLoan: { lenderUserId: u.id } }) },
+      _sum: { writeOff: true, discount: true, agreedValue: true },
+      _count: true,
+    });
     const users = await this.prisma.user.findMany({ where: admin ? { role: 'OPERATOR' } : { id: u.id } });
     const capComFunc = users.reduce((s, x) => s + c(x.capitalDisponivel) + c(x.capitalEmprestado), 0);
     const repasse = users.reduce((s, x) => s + c(x.paraRepassar), 0);
@@ -79,6 +84,8 @@ export class DashboardService {
       /** Cobrança por atraso longo já acumulada nos empréstimos em aberto (entra na quitação). */
       atrasoLongoAReceberCents: atrasoLongoAcumulado,
       atrasoLongoEmprestimos: atrasoLongoLoans,
+      /** Negociações emergenciais fechadas no mês. */
+      renegociacoesMes: { count: renegMonth._count, acordadoCents: c(renegMonth._sum.agreedValue), prejuizoCents: c(renegMonth._sum.writeOff), descontoCents: c(renegMonth._sum.discount) },
       repassePendenteCents: repasse,
       comissaoAPagarCents: comissao,
       pendingApprovals: { payments: pPay, transfers: pTr },

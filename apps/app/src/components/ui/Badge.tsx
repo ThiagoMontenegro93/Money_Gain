@@ -27,6 +27,7 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   QUITADO: { bg: '#059669', color: '#FFFFFF' },
   PERDA: { bg: '#111827', color: '#FCA5A5' },
   CANCELADO: { bg: '#374151', color: '#E5E7EB' },
+  RENEGOCIADO: { bg: '#7C3AED', color: '#FFFFFF' },
   AGUARDANDO_APROVACAO: { bg: '#B45309', color: '#FFFFFF' },
   APROVADO: { bg: '#059669', color: '#FFFFFF' },
   REJEITADO: { bg: '#B91C1C', color: '#FFFFFF' },

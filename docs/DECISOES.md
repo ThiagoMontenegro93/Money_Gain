@@ -77,3 +77,16 @@ Pontos em que a especificação deixava margem e a escolha feita:
 36. O recebido entra como receita de multa (comissão do funcionário incide igual), mas fica **separado**: campo próprio
     no pagamento, lançamento "cobrança por atraso longo" no caixa e cartões no painel (recebido no mês e acumulado nos
     empréstimos em aberto). A planilha de backup mantém as fórmulas da spec; o valor exato fica na aba oculta `_DADOS`.
+
+## Negociação emergencial e simulação (pedido de 27/11)
+37. **Negociação emergencial** (gestor/dono, com senha e motivo): a dívida atual é encerrada como `RENEGOCIADO` e nasce
+    um acordo em parcelas iguais, sem juros novos, ligado ao empréstimo original. Simular não grava nada; só o
+    "Fechar acordo" grava, e não dá para desfazer (fica na auditoria e avisa o dono).
+38. O acordo devolve **primeiro o capital**: principal do acordo = menor entre o valor acordado e o saldo devedor. O que
+    passar do saldo vira lucro (juros) nas parcelas. O capital que não volta sai do "emprestado" de quem emprestou e
+    entra no caixa como `PERDA_RENEGOCIACAO`. O painel mostra acordos, prejuízo e desconto do mês.
+39. O acordo não aceita amortização nem atraso longo; a multa diária é opcional (desligada por padrão). Recibo pendente
+    bloqueia a negociação até ser aprovado ou rejeitado.
+40. **Simular mudanças** (gestor/dono): testa taxa, multa diária e atraso longo de um empréstimo e mostra o antes e o
+    depois sem gravar. "Aplicar de verdade" grava só multa e atraso longo; a taxa de um empréstimo já liberado não muda
+    (para mudar condições, use a negociação ou um novo empréstimo).

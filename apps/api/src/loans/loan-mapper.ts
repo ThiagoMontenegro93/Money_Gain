@@ -9,7 +9,7 @@ import {
   diffDays,
   viewInstallment,
 } from '@lendcontrol/core';
-import { Installment, Loan, Payment, User } from '@prisma/client';
+import { Installment, Loan, Payment, Renegotiation, User } from '@prisma/client';
 import { c, cn, iso, num, ref } from '../common/util';
 
 export function toEngineLoan(l: Loan): EngineLoan {
@@ -168,3 +168,35 @@ export const loanInclude = {
   lender: { select: { id: true, name: true } },
   funder: { select: { id: true, name: true } },
 } as const;
+
+/** Negociação emergencial no formato da API. */
+type RenegRow = Renegotiation & {
+  oldLoan: { code: number; client: { fullName: string } };
+  newLoan: { code: number; status: string };
+  createdBy: { id: string; name: string };
+};
+export function renegDTO(r: RenegRow) {
+  return {
+    id: r.id,
+    code: r.code,
+    oldLoanId: r.oldLoanId,
+    oldLoanCode: r.oldLoan.code,
+    newLoanId: r.newLoanId,
+    newLoanCode: r.newLoan.code,
+    newLoanStatus: r.newLoan.status,
+    clientId: r.clientId,
+    clientName: r.oldLoan.client.fullName,
+    debtCents: c(r.debtValue),
+    saldoDevedorCents: c(r.saldoDevedor),
+    agreedCents: c(r.agreedValue),
+    installmentsCount: r.installmentsCount,
+    method: r.method,
+    firstDueDate: iso(r.firstDueDate),
+    writeOffCents: c(r.writeOff),
+    discountCents: c(r.discount),
+    reason: r.reason,
+    createdBy: r.createdBy,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
