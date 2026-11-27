@@ -19,6 +19,8 @@ async function bootstrap() {
   const { AppModule } = await import('./app.module');
 
   const app = await NestFactory.create(AppModule, { logger: ['log', 'warn', 'error'] });
+  // atrás do Caddy/proxy da rede interna: usa o IP real do cliente (limite de tentativas de login)
+  app.getHttpAdapter().getInstance().set('trust proxy', 'loopback, linklocal, uniquelocal');
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   const origins = (process.env.CORS_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   app.enableCors({ origin: origins.length ? origins : true, credentials: false });

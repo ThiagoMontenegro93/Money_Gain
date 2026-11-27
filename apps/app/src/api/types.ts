@@ -28,6 +28,9 @@ export interface UserDTO {
   pixKey?: string | null;
   role: Role;
   isActive: boolean;
+  /** Acesso bloqueado por senhas erradas até esta data (ISO), se houver. */
+  lockedUntil?: string | null;
+  failedLogins?: number;
   commissionPercent: number;
   revolving: boolean;
   wallet: WalletDTO;
@@ -485,7 +488,8 @@ export interface BackupDTO {
   isAutomatic: boolean; isRestore: boolean; emailSentTo: string | null; createdAt: string; available: boolean; createdBy?: string | null;
 }
 export interface BackupList { backups: BackupDTO[]; restores: BackupDTO[]; smtpConfigured: boolean }
-export interface BackupEmailConfig { enabled: boolean; email: string; extraEmails: string[] }
+export type BackupEmailProtection = 'LINK' | 'SENHA' | 'ANEXO';
+export interface BackupEmailConfig { enabled: boolean; email: string; extraEmails: string[]; protection?: BackupEmailProtection; hasFilePassword?: boolean; filePassword?: string }
 export interface RestorePreview {
   token: string | null; valid: boolean; encrypted: boolean; fileName: string; backupCreatedAt: string | null; summary: string | null;
   counts: Record<string, number>; errors: string[]; warnings: string[]; distribution: string[];
@@ -547,3 +551,21 @@ export type LongLateMode = 'OFF' | 'PERCENT' | 'FIXED';
 export interface LongLate { longLateMode: LongLateMode; longLateAfterDays: number; longLatePercent: number; longLateFixedCents: number }
 export interface LoanDefaults extends LongLate { allowAmortization: boolean; allowLateFee: boolean; multaDiaPercent: number }
 export interface LoanOptionsBody extends Partial<LongLate> { allowAmortization?: boolean; allowLateFee?: boolean; multaDiaPercent?: number }
+
+/** Backup fora do servidor (S3 compatível: AWS S3, Cloudflare R2, Backblaze B2, Wasabi). */
+export interface OffsiteInput {
+  enabled: boolean;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKeyId: string;
+  prefix: string;
+  secretAccessKey?: string;
+  password?: string;
+}
+export interface OffsiteConfig extends Omit<OffsiteInput, 'secretAccessKey' | 'password'> {
+  hasSecret: boolean;
+  hasPassword: boolean;
+  filesPending: number;
+  last: { at: string; ok: boolean; error?: string | null; backupKey?: string | null; filesSent?: number; filesPending?: number } | null;
+}

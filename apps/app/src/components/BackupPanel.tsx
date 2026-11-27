@@ -2,10 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { api } from '@/api';
 import { errorMessage } from '@/api/http';
-import type { BackupDTO, RestorePreview, RestoreResult } from '@/api/types';
+import type { BackupDTO, BackupEmailProtection, RestorePreview, RestoreResult } from '@/api/types';
 import { PromptModal } from '@/components/PromptModal';
 import { useToast } from '@/components/Toast';
-import { Badge, Button, Card, Checkbox, Empty, ErrorState, InlineError, Input, Loading, Modal, Notice, Stack } from '@/components/ui';
+import { Badge, Button, Card, Checkbox, Empty, ErrorState, InlineError, Input, Loading, Modal, Notice, Segmented, Stack } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
 import { useLayout } from '@/hooks/useLayout';
 import { colors } from '@/theme';
@@ -23,6 +23,8 @@ function EmailSettings({ smtpConfigured }: { smtpConfigured: boolean }) {
   const [enabled, setEnabled] = useState(false);
   const [email, setEmail] = useState('');
   const [extra, setExtra] = useState('');
+  const [protection, setProtection] = useState<BackupEmailProtection>('LINK');
+  const [filePassword, setFilePassword] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<'save' | 'test' | null>(null);
   const [saved, setSaved] = useState(false);
@@ -32,6 +34,8 @@ function EmailSettings({ smtpConfigured }: { smtpConfigured: boolean }) {
     setEnabled(data.enabled);
     setEmail(data.email);
     setExtra(data.extraEmails.join(', '));
+    setProtection(data.protection ?? 'LINK');
+    setFilePassword('');
   }, [data]);
 
   if (loading && !data) return <Loading />;
@@ -43,6 +47,8 @@ function EmailSettings({ smtpConfigured }: { smtpConfigured: boolean }) {
     if (email.trim() && !isEmail(email)) return 'E-mail inválido';
     const bad = extras.find((e) => !isEmail(e));
     if (bad) return `E-mail adicional inválido: ${bad}`;
+    if (protection === 'SENHA' && !data?.hasFilePassword && filePassword.length < 8) return 'Defina a senha do arquivo (mínimo 8 caracteres)';
+    if (filePassword && filePassword.length < 8) return 'A senha do arquivo precisa ter ao menos 8 caracteres';
     return null;
   };
   const save = async () => {
@@ -52,8 +58,10 @@ function EmailSettings({ smtpConfigured }: { smtpConfigured: boolean }) {
     if (v) return;
     setBusy('save');
     try {
-      await api.backups.saveSettings({ enabled, email: email.trim(), extraEmails: extras });
+      await api.backups.saveSettings({ enabled, email: email.trim(), extraEmails: extras, protection, ...(filePassword ? { filePassword } : {}) });
       setSaved(true);
+      setFilePassword('');
+      reload();
       toast('E-mail de backup salvo');
     } catch (e) {
       setErr(errorMessage(e));
@@ -83,11 +91,157 @@ function EmailSettings({ smtpConfigured }: { smtpConfigured: boolean }) {
         <Input testID="backup-email" label="E-mail para receber o backup" value={email} onChangeText={setEmail} placeholder="seuemail@exemplo.com" keyboardType="email-address" autoCapitalize="none" style={{ flex: 1 }} />
         <Input testID="backup-extra" label="E-mails adicionais (separados por vírgula)" value={extra} onChangeText={setExtra} placeholder="contador@exemplo.com, socio@exemplo.com" autoCapitalize="none" style={{ flex: 1 }} />
       </Stack>
+      <Segmented
+        testIDPrefix="backup-protection"
+        label="Como a planilha vai no e-mail (ela tem CPF completo)"
+        value={protection}
+        onChange={setProtection}
+        options={[
+          { value: 'LINK', label: '🔗 Link seguro (72 h)' },
+          { value: 'SENHA', label: '🔒 Anexo com senha' },
+          { value: 'ANEXO', label: '📎 Anexo aberto' },
+        ]}
+      />
+      <Text style={styles.dim}>
+        {protection === 'LINK'
+          ? 'Recomendado. O e-mail não leva a planilha: leva um link que baixa o arquivo por 72 horas. Cada download fica registrado.'
+          : protection === 'SENHA'
+            ? 'O e-mail leva o arquivo .lcbak criptografado. Ele só abre aqui no sistema (Restaurar backup) com a senha do arquivo.'
+            : 'O e-mail leva a planilha aberta. Qualquer pessoa com acesso ao e-mail vê os CPFs. Não recomendado.'}
+      </Text>
+      {protection === 'SENHA' ? (
+        <Input
+          testID="backup-file-password"
+          label={data?.hasFilePassword ? 'Nova senha do arquivo (deixe em branco para manter a atual)' : 'Senha do arquivo'}
+          secure
+          value={filePassword}
+          onChangeText={setFilePassword}
+          placeholder="mínimo 8 caracteres"
+          autoCapitalize="none"
+          style={{ maxWidth: 420, marginTop: 8 }}
+        />
+      ) : null}
+      {protection === 'ANEXO' ? <Notice tone="warning" text="Planilha com CPF completo anexada sem proteção." /> : null}
       <InlineError message={err} />
       {saved ? <Text testID="backup-email-saved" style={{ color: colors.success, fontWeight: '800', marginBottom: 8 }}>✅ E-mail de backup salvo</Text> : null}
       <View style={styles.btns}>
         <Button testID="backup-email-save" title="Salvar Configurações" icon="💾" loading={busy === 'save'} onPress={save} />
         <Button testID="backup-email-test" title="Testar envio agora" icon="📤" variant="secondary" loading={busy === 'test'} disabled={!data?.email && !email} onPress={test} />
+      </View>
+    </Card>
+  );
+}
+
+// ------------------------------------------------------- backup na nuvem
+function OffsiteSettings() {
+  const toast = useToast();
+  const { isDesktop } = useLayout();
+  const { data, error, loading, reload } = useAsync(() => api.backups.offsite(), []);
+  const [f, setF] = useState({ enabled: false, endpoint: '', region: 'auto', bucket: '', accessKeyId: '', prefix: 'lendcontrol/', secretAccessKey: '', password: '' });
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<'save' | 'test' | 'run' | null>(null);
+
+  useEffect(() => {
+    if (!data) return;
+    setF({ enabled: data.enabled, endpoint: data.endpoint, region: data.region || 'auto', bucket: data.bucket, accessKeyId: data.accessKeyId, prefix: data.prefix, secretAccessKey: '', password: '' });
+  }, [data]);
+
+  if (loading && !data) return <Loading />;
+  if (error) return <ErrorState message={error} onRetry={reload} />;
+  const set = (p: Partial<typeof f>) => setF((o) => ({ ...o, ...p }));
+
+  const save = async (quiet = false) => {
+    if (f.password && f.password.length < 8) {
+      setErr('A senha do backup na nuvem precisa ter ao menos 8 caracteres');
+      return false;
+    }
+    setErr(null);
+    setBusy('save');
+    try {
+      await api.backups.saveOffsite({ ...f, secretAccessKey: f.secretAccessKey || undefined, password: f.password || undefined });
+      reload();
+      if (!quiet) toast('Backup na nuvem salvo');
+      return true;
+    } catch (e) {
+      setErr(errorMessage(e));
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  };
+  const act = async (kind: 'test' | 'run') => {
+    if (f.secretAccessKey || f.password) if (!(await save(true))) return;
+    setBusy(kind);
+    try {
+      if (kind === 'test') {
+        await api.backups.testOffsite();
+        toast('Conexão ok: arquivo de teste gravado no bucket');
+      } else {
+        const r = await api.backups.runOffsite();
+        toast(`Backup enviado para a nuvem (+${r.last?.filesSent ?? 0} arquivo(s))`);
+      }
+      setErr(null);
+    } catch (e) {
+      setErr(errorMessage(e));
+    } finally {
+      setBusy(null);
+      reload();
+    }
+  };
+  const last = data?.last;
+
+  return (
+    <Card title="☁️ Backup na nuvem (fora do servidor)" testID="offsite-card">
+      <Text style={styles.dim}>
+        Todo dia às 03:00 o sistema envia o backup completo e as fotos, documentos e comprovantes para um armazenamento seu (Amazon S3, Cloudflare R2, Backblaze B2 ou Wasabi). Tudo vai criptografado com a senha abaixo: guarde essa senha, sem ela os arquivos não abrem.
+      </Text>
+      {last ? (
+        <View testID="offsite-last" style={{ marginTop: 8 }}>
+          {last.ok ? (
+            <Notice tone="success" text={`Último envio ${dateTimeBR(last.at)}: ok (${last.filesSent ?? 0} arquivo(s) novos${last.filesPending ? `, ${last.filesPending} ficam para o próximo` : ''}).`} />
+          ) : (
+            <Notice tone="danger" text={`Último envio ${dateTimeBR(last.at)} falhou: ${last.error ?? 'erro desconhecido'}`} />
+          )}
+        </View>
+      ) : null}
+      <View style={{ height: 10 }} />
+      <Checkbox testID="offsite-enabled" checked={f.enabled} onChange={(enabled) => set({ enabled })} label="Ativar envio diário às 03:00" />
+      <Stack row={isDesktop} gap={12} style={{ marginTop: 10 }}>
+        <Input testID="offsite-endpoint" label="Endereço do armazenamento" value={f.endpoint} onChangeText={(endpoint) => set({ endpoint })} placeholder="https://<conta>.r2.cloudflarestorage.com" autoCapitalize="none" style={{ flex: 2 }} />
+        <Input testID="offsite-region" label="Região" value={f.region} onChangeText={(region) => set({ region })} placeholder="auto ou sa-east-1" autoCapitalize="none" style={{ flex: 1 }} />
+      </Stack>
+      <Stack row={isDesktop} gap={12}>
+        <Input testID="offsite-bucket" label="Bucket" value={f.bucket} onChangeText={(bucket) => set({ bucket })} placeholder="lendcontrol-backup" autoCapitalize="none" style={{ flex: 1 }} />
+        <Input testID="offsite-prefix" label="Pasta dentro do bucket" value={f.prefix} onChangeText={(prefix) => set({ prefix })} placeholder="lendcontrol/" autoCapitalize="none" style={{ flex: 1 }} />
+      </Stack>
+      <Stack row={isDesktop} gap={12}>
+        <Input testID="offsite-key" label="Chave de acesso (Access Key ID)" value={f.accessKeyId} onChangeText={(accessKeyId) => set({ accessKeyId })} autoCapitalize="none" style={{ flex: 1 }} />
+        <Input
+          testID="offsite-secret"
+          label={data?.hasSecret ? 'Chave secreta (em branco mantém a atual)' : 'Chave secreta (Secret Access Key)'}
+          secure
+          value={f.secretAccessKey}
+          onChangeText={(secretAccessKey) => set({ secretAccessKey })}
+          autoCapitalize="none"
+          style={{ flex: 1 }}
+        />
+      </Stack>
+      <Input
+        testID="offsite-password"
+        label={data?.hasPassword ? 'Nova senha do backup na nuvem (em branco mantém a atual)' : 'Senha do backup na nuvem'}
+        secure
+        value={f.password}
+        onChangeText={(password) => set({ password })}
+        placeholder="mínimo 8 caracteres"
+        autoCapitalize="none"
+        style={{ maxWidth: 420 }}
+      />
+      {data && data.filesPending > 0 ? <Text testID="offsite-pending" style={styles.dim}>{data.filesPending} foto(s)/comprovante(s) ainda não enviados.</Text> : null}
+      <InlineError message={err} />
+      <View style={[styles.btns, { marginTop: 6 }]}>
+        <Button testID="offsite-save" title="Salvar" icon="💾" loading={busy === 'save'} onPress={() => void save()} />
+        <Button testID="offsite-test" title="Testar conexão" icon="🔌" variant="secondary" loading={busy === 'test'} disabled={!!busy} onPress={() => void act('test')} />
+        <Button testID="offsite-run" title="Enviar agora" icon="☁️" variant="secondary" loading={busy === 'run'} disabled={!!busy} onPress={() => void act('run')} />
       </View>
     </Card>
   );
@@ -312,6 +466,7 @@ export function BackupPanel() {
   return (
     <View style={{ gap: 14 }}>
       <EmailSettings smtpConfigured={!!data?.smtpConfigured} />
+      <OffsiteSettings />
       <History items={data?.backups ?? []} onChanged={reload} />
       <Restore onDone={reload} />
       <Card title="📜 Log de restaurações" testID="restore-log">

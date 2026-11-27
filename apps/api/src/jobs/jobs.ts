@@ -1,6 +1,7 @@
 import { Controller, Injectable, Logger, Post } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { daysLate, viewInstallment } from '@lendcontrol/core';
+import { AlertService } from '../common/alert.service';
 import { AuditService } from '../common/audit.service';
 import { IDEMPOTENCY_RETENTION_DAYS } from '../common/idempotency.interceptor';
 import { AuthUser, CurrentUser, Roles } from '../common/auth';
@@ -22,11 +23,16 @@ export class JobsService {
     private prisma: PrismaService,
     private score: ScoreService,
     private audit: AuditService,
+    private alerts: AlertService,
   ) {}
 
   @Cron('0 0 * * *', { timeZone: 'America/Sao_Paulo', name: 'daily-late-fees' })
   async nightly() {
-    await this.run('cron');
+    try {
+      await this.run('cron');
+    } catch (e) {
+      await this.alerts.failure('Rotina das 00:00 (multas e score) falhou', e);
+    }
   }
 
   async run(trigger: string) {

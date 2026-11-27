@@ -268,6 +268,14 @@ export default function ClientDetailScreen() {
 
       {/* Empréstimos */}
       <Card title={`💰 Empréstimos (${c.loans.length})`} style={{ marginBottom: 12, padding: isDesktop ? 0 : 16 }} right={<View style={{ paddingRight: isDesktop ? 16 : 0, paddingTop: isDesktop ? 12 : 0 }}><Button size="sm" title="Novo" icon="➕" disabled={blocked} onPress={() => router.push(`/loans/new?clientId=${c.id}`)} /></View>}>
+        {outbox.items.filter((i) => i.kind === 'loan' && i.meta?.clientId === c.id).map((i) => (
+          <View key={i.id} testID="queued-loan" style={{ padding: isDesktop ? 12 : 0, paddingBottom: 10 }}>
+            <Notice
+              tone={i.status === 'failed' ? 'danger' : 'warning'}
+              text={`${i.label}: ${i.status === 'failed' ? `não enviado - ${i.error ?? ''}` : '📴 salvo no aparelho, sobe quando a internet voltar'}`}
+            />
+          </View>
+        ))}
         <LoanTable loans={c.loans} showClient={false} emptyText="Cliente ainda não tem empréstimos" />
       </Card>
       </>

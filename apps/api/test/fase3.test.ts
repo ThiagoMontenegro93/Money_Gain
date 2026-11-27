@@ -114,16 +114,38 @@ describe('Backup em Excel (7 abas BANE)', () => {
 });
 
 describe('E-mail do backup', () => {
-  it('valida, salva e testa o envio com anexo para o e-mail principal e adicionais', async () => {
+  it('valida, salva e testa o envio: padrão é link (sem anexo) para o e-mail principal e adicionais', async () => {
     expect((await call(owner, 'PUT', '/backups/settings', { enabled: true, email: 'nao-e-email', extraEmails: [] })).status).toBe(400);
     const saved = await ok(owner, 'PUT', '/backups/settings', { enabled: true, email: 'Thiago@Exemplo.com', extraEmails: ['contador@exemplo.com'] });
-    expect(saved.email).toBe('thiago@exemplo.com');
+    expect(saved).toMatchObject({ email: 'thiago@exemplo.com', protection: 'LINK', hasFilePassword: false });
     expect(await ok(owner, 'GET', '/backups/settings')).toMatchObject({ enabled: true, extraEmails: ['contador@exemplo.com'] });
     const sent = await ok(owner, 'POST', '/backups/settings/test');
     expect(sent.emailSentTo).toBe('thiago@exemplo.com, contador@exemplo.com');
     const m = mails.at(-1)!;
     expect(m.to).toEqual(['thiago@exemplo.com', 'contador@exemplo.com']);
-    expect(m.raw).toMatch(/filename="?lendcontrol-backup-.*\.xlsx/);
+    expect(m.raw).not.toMatch(/filename=/);
+    const body = m.raw.replace(/=\r?\n/g, '').replace(/=3D/g, '=');
+    const url = /(https?:\/\/\S+\/api\/backups\/\S+\/link\?exp=\d+&sig=[0-9a-f]{64})/.exec(body)![1];
+    const path = url.slice(url.indexOf('/api/') + 4);
+    const dl = await fetch(API + path);
+    expect(dl.status).toBe(200);
+    expect(Buffer.from(await dl.arrayBuffer()).subarray(0, 2).toString()).toBe('PK');
+    expect((await fetch(API + path.replace(/sig=[0-9a-f]/, (x) => (x.endsWith('0') ? 'sig=1' : 'sig=0')))).status).toBe(403);
+  });
+
+  it('modo senha anexa o .lcbak criptografado; modo anexo manda a planilha aberta', async () => {
+    const base = { enabled: true, email: 'thiago@exemplo.com', extraEmails: [] };
+    expect((await call(owner, 'PUT', '/backups/settings', { ...base, protection: 'SENHA' })).status).toBe(400);
+    const s1 = await ok(owner, 'PUT', '/backups/settings', { ...base, protection: 'SENHA', filePassword: 'senha-do-arquivo' });
+    expect(s1).toMatchObject({ protection: 'SENHA', hasFilePassword: true });
+    expect(JSON.stringify(s1)).not.toMatch(/senha-do-arquivo/);
+    await ok(owner, 'POST', '/backups/settings/test');
+    expect(mails.at(-1)!.raw).toMatch(/filename="?lendcontrol-backup-.*\.lcbak/);
+    await ok(owner, 'PUT', '/backups/settings', { ...base, protection: 'ANEXO' });
+    await ok(owner, 'POST', '/backups/settings/test');
+    expect(mails.at(-1)!.raw).toMatch(/filename="?lendcontrol-backup-.*\.xlsx/);
+    // mantém a senha salva quando o campo vem vazio
+    expect(await ok(owner, 'PUT', '/backups/settings', { ...base, protection: 'LINK', filePassword: '' })).toMatchObject({ hasFilePassword: true });
   });
 });
 

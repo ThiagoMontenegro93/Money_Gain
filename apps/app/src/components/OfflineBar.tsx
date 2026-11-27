@@ -5,9 +5,10 @@ import { useNetState } from '../offline/state';
 import { colors } from '../theme';
 import { dateTimeBR } from '../utils/format';
 import { useToast } from './Toast';
+import { OfflineDataStatus } from './OfflineDataCard';
 import { Badge, Button, Empty, Modal } from './ui';
 
-const KIND_ICON: Record<OutboxItem['kind'], string> = { payment: '🧾', client: '👤', attempt: '📋', receipt: '📎' };
+const KIND_ICON: Record<OutboxItem['kind'], string> = { payment: '🧾', client: '👤', attempt: '📋', receipt: '📎', loan: '💰' };
 const p2 = (n: number) => String(n).padStart(2, '0');
 /** dd/mm hh:mm */
 const shortStamp = (t: number) => {
@@ -84,6 +85,9 @@ export function OfflineBar() {
           Ações feitas sem internet ficam salvas neste aparelho e são enviadas na ordem assim que a conexão volta. Recibos continuam indo para aprovação do administrador.
         </Text>
         {total === 0 ? <Empty text="Nada pendente de envio" icon="✅" /> : null}
+        <View style={{ marginBottom: 12 }}>
+          <OfflineDataStatus />
+        </View>
         {box.items.map((i, idx) => (
           <View key={i.id} testID={`outbox-item-${idx}`} style={[styles.item, i.status === 'failed' && { borderLeftColor: colors.danger }]}>
             <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>

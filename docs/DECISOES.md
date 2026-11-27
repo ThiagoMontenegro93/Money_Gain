@@ -90,3 +90,21 @@ Pontos em que a especificação deixava margem e a escolha feita:
 40. **Simular mudanças** (gestor/dono): testa taxa, multa diária e atraso longo de um empréstimo e mostra o antes e o
     depois sem gravar. "Aplicar de verdade" grava só multa e atraso longo; a taxa de um empréstimo já liberado não muda
     (para mudar condições, use a negociação ou um novo empréstimo).
+
+## Segurança, backup fora do servidor, alertas e offline (pedido de 27/11)
+41. **Bloqueio do login**: 5 senhas erradas seguidas bloqueiam a conta por 15 min, dobrando a cada nova série (até 24 h).
+    Vale também para a senha pedida em aprovações e troca de senha. O dono é avisado e desbloqueia em Equipe. Além disso,
+    um mesmo endereço de rede com 20 erros em 15 min é barrado (429).
+42. **Excel por e-mail**: o padrão passa a ser **link seguro** (assinado, 72 h, cada download auditado) em vez da planilha
+    anexada. Opções: anexo criptografado `.lcbak` com a senha do arquivo, ou anexo aberto (não recomendado).
+43. **Backup na nuvem**: armazenamento compatível com S3 (Amazon S3, Cloudflare R2, Backblaze B2, Wasabi). Google Drive
+    exigiria login OAuth da conta Google do dono; o S3/R2 só precisa de chave de acesso e é mais simples de manter.
+    Todo dia 03:00 envia o backup completo e as fotos/comprovantes novos, tudo criptografado com a senha do backup na
+    nuvem (o provedor não lê os dados). A retenção (apagar cópias antigas) fica na regra de ciclo de vida do bucket.
+44. **Alertas**: falhas do backup, do envio para a nuvem, da rotina das 00:00 e do WhatsApp viram notificação e e-mail
+    (ALERT_EMAIL + e-mails do backup), no máximo 1 e-mail por tipo a cada 6 h. Um vigia separado (serviço `watchdog`)
+    avisa quando o servidor cai e quando volta, porque o próprio app não consegue avisar que caiu.
+45. **Offline ampliado**: com internet o app baixa a carteira do usuário (clientes, fichas e empréstimos em aberto) a
+    cada 30 min. Sem internet a busca e os filtros funcionam no aparelho, e dá para lançar também **novo empréstimo**:
+    as parcelas são calculadas no aparelho com o mesmo motor; a análise de crédito e a checagem de saldo da carteira
+    acontecem no servidor quando o envio sobe (se recusar, o item fica com erro em "Envios pendentes").

@@ -17,7 +17,7 @@ import { kvGet, kvSet } from './kv';
 import { deviceOnline, onConnectivityChange } from './network';
 import { noteNetworkFail } from './state';
 
-export type OutboxKind = 'payment' | 'client' | 'attempt' | 'receipt';
+export type OutboxKind = 'payment' | 'client' | 'attempt' | 'receipt' | 'loan';
 
 export interface OutboxFile {
   /** Caminho do campo no corpo que recebe o id do arquivo (ex.: "comprovanteFileId", "form.selfieFileId"). */

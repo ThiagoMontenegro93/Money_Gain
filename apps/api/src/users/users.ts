@@ -1,4 +1,5 @@
-import { Body, Controller, ForbiddenException, Get, Injectable, Logger, OnApplicationBootstrap, Param, Post, Put, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, HttpException, HttpStatus, Injectable, Ip, Logger, OnApplicationBootstrap, Param, Post, Put, UnauthorizedException } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { JwtService } from '@nestjs/jwt';
 import { Role, User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -17,6 +18,8 @@ export function toUserDTO(u: User) {
     pixKey: u.pixKey,
     role: u.role,
     isActive: u.isActive,
+    lockedUntil: u.lockedUntil && u.lockedUntil > new Date() ? u.lockedUntil.toISOString() : null,
+    failedLogins: u.failedLogins,
     commissionPercent: num(u.commissionPercent),
     revolving: u.revolving,
     wallet: {
@@ -27,6 +30,21 @@ export function toUserDTO(u: User) {
       recebidoClientesCents: c(u.recebidoClientes),
     },
   };
+}
+
+/** Bloqueio por senha errada: 5 erros seguidos bloqueiam 15 min; cada erro a mais dobra (até 24 h). */
+export const LOGIN_MAX_FAILS = 5;
+const LOCK_BASE_MS = 15 * 60_000;
+const LOCK_MAX_MS = 24 * 60 * 60_000;
+export const lockMsFor = (fails: number) => (fails < LOGIN_MAX_FAILS ? 0 : Math.min(LOCK_MAX_MS, LOCK_BASE_MS * 2 ** (fails - LOGIN_MAX_FAILS)));
+/** Limite por IP (inclui e-mails que não existem): 20 erros em 15 min. */
+const IP_MAX_FAILS = 20;
+const IP_WINDOW_MS = 15 * 60_000;
+
+function lockedMessage(until: Date) {
+  const min = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 60_000));
+  const quando = min >= 60 ? `${Math.ceil(min / 60)} h` : `${min} min`;
+  return `Acesso bloqueado por muitas senhas erradas. Tente de novo em ${quando} ou peça ao dono para desbloquear.`;
 }
 
 @Injectable()
@@ -51,13 +69,58 @@ export class UsersService implements OnApplicationBootstrap {
     new Logger('Users').log(`Dono criado no primeiro acesso: ${email} (troque a senha em Configurações)`);
   }
 
-  async login(email: string, password: string) {
+  private ipFails = new Map<string, { count: number; resetAt: number }>();
+
+  private checkIp(ip: string) {
+    const e = this.ipFails.get(ip);
+    if (e && e.resetAt > Date.now() && e.count >= IP_MAX_FAILS)
+      throw new HttpException({ message: 'Muitas tentativas deste aparelho. Espere 15 minutos e tente de novo.', code: 'TOO_MANY_ATTEMPTS' }, HttpStatus.TOO_MANY_REQUESTS);
+  }
+
+  private countIp(ip: string) {
+    // o próprio servidor (testes, scripts locais) não conta; em produção o IP vem do proxy
+    if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return;
+    const now = Date.now();
+    const e = this.ipFails.get(ip);
+    if (!e || e.resetAt <= now) this.ipFails.set(ip, { count: 1, resetAt: now + IP_WINDOW_MS });
+    else e.count++;
+    if (this.ipFails.size > 10_000) for (const [k, v] of this.ipFails) if (v.resetAt <= now) this.ipFails.delete(k);
+  }
+
+  /** Registra uma senha errada; no limite, bloqueia e avisa o dono. Devolve a data do bloqueio, se houver. */
+  private async registerFailure(user: User, origin: 'login' | 'confirmação') {
+    const fails = user.failedLogins + 1;
+    const ms = lockMsFor(fails);
+    const lockedUntil = ms ? new Date(Date.now() + ms) : null;
+    await this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: fails, ...(lockedUntil ? { lockedUntil } : {}) } });
+    if (lockedUntil && fails === LOGIN_MAX_FAILS) {
+      await this.audit.log(user.id, 'ACCOUNT_LOCKED', 'User', user.id, { fails, until: lockedUntil.toISOString(), origin });
+      await this.audit.notifyAdmins('Acesso bloqueado', `${user.name} (${user.email}) errou a senha ${fails} vezes seguidas (${origin}). Acesso bloqueado até ${lockedUntil.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}.`, { userId: user.id });
+    }
+    return lockedUntil;
+  }
+
+  async login(email: string, password: string, ip = 'desconhecido') {
+    this.checkIp(ip);
     const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+    if (user?.lockedUntil && user.lockedUntil > new Date()) {
+      this.countIp(ip);
+      await this.audit.log(user.id, 'LOGIN_BLOCKED', 'User', user.id, { email, ip });
+      throw new HttpException({ message: lockedMessage(user.lockedUntil), code: 'ACCOUNT_LOCKED' }, HttpStatus.LOCKED);
+    }
     if (!user || !user.isActive || !(await bcrypt.compare(password, user.passwordHash))) {
-      await this.audit.log(user?.id ?? null, 'LOGIN_FAILED', 'User', user?.id ?? null, { email });
+      this.countIp(ip);
+      await this.audit.log(user?.id ?? null, 'LOGIN_FAILED', 'User', user?.id ?? null, { email, ip });
+      if (user && user.isActive) {
+        const until = await this.registerFailure(user, 'login');
+        if (until) throw new HttpException({ message: lockedMessage(until), code: 'ACCOUNT_LOCKED' }, HttpStatus.LOCKED);
+        const left = LOGIN_MAX_FAILS - (user.failedLogins + 1);
+        if (left <= 2) throw new UnauthorizedException({ message: `E-mail ou senha inválidos. Mais ${left} tentativa(s) antes de bloquear o acesso.`, code: 'BAD_LOGIN' });
+      }
       throw new UnauthorizedException('E-mail ou senha inválidos');
     }
-    await this.audit.log(user.id, 'LOGIN', 'User', user.id);
+    if (user.failedLogins || user.lockedUntil) await this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: 0, lockedUntil: null } });
+    await this.audit.log(user.id, 'LOGIN', 'User', user.id, { ip });
     const accessToken = await this.jwt.signAsync({ sub: user.id, role: user.role, name: user.name });
     return { accessToken, user: toUserDTO(user) };
   }
@@ -65,8 +128,14 @@ export class UsersService implements OnApplicationBootstrap {
   /** Reconfirmação de senha para ações sensíveis (aprovação, desbloqueio, restauração). */
   async verifyPassword(userId: string, password: string | undefined) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    if (!password || !(await bcrypt.compare(password, user.passwordHash)))
+    if (user.lockedUntil && user.lockedUntil > new Date())
+      throw new HttpException({ message: lockedMessage(user.lockedUntil), code: 'ACCOUNT_LOCKED' }, HttpStatus.LOCKED);
+    if (!password || !(await bcrypt.compare(password, user.passwordHash))) {
+      const until = await this.registerFailure(user, 'confirmação');
+      if (until) throw new HttpException({ message: lockedMessage(until), code: 'ACCOUNT_LOCKED' }, HttpStatus.LOCKED);
       throw new UnauthorizedException({ message: 'Senha incorreta', code: 'BAD_PASSWORD' });
+    }
+    if (user.failedLogins) await this.prisma.user.update({ where: { id: user.id }, data: { failedLogins: 0 } });
     return user;
   }
 
@@ -111,9 +180,19 @@ export class UsersController {
   ) {}
 
   @Public()
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @Post('auth/login')
-  login(@Body(new ZodPipe(loginSchema)) body: z.infer<typeof loginSchema>) {
-    return this.users.login(body.email, body.password);
+  login(@Body(new ZodPipe(loginSchema)) body: z.infer<typeof loginSchema>, @Ip() ip: string) {
+    return this.users.login(body.email, body.password, ip);
+  }
+
+  /** Dono desbloqueia o acesso de alguém que errou a senha várias vezes. */
+  @Roles('SUPER_ADMIN')
+  @Post('users/:id/unlock')
+  async unlock(@CurrentUser() u: AuthUser, @Param('id') id: string) {
+    const user = await this.prisma.user.update({ where: { id }, data: { failedLogins: 0, lockedUntil: null } });
+    await this.audit.log(u.id, 'UNLOCK', 'User', id);
+    return toUserDTO(user);
   }
 
   @Get('auth/me')

@@ -52,7 +52,13 @@ const step = (m) => console.log('✓ ' + m);
     await tid(d, 'backup-email-test').click();
     for (let i = 0; i < 40 && mails.length === before; i++) await d.waitForTimeout(250);
     const m = mails.at(-1);
-    if (!m || m.to.length !== 3 || !/lendcontrol-backup-.*\.xlsx/.test(m.raw)) throw new Error('e-mail de teste não chegou com o anexo');
+    if (!m || m.to.length !== 3) throw new Error('e-mail de teste não chegou para os 3 destinatários');
+    // padrão: link seguro (sem a planilha anexada)
+    const body = m.raw.replace(/=\r?\n/g, '').replace(/=3D/g, '=');
+    const link = /https?:\/\/\S+\/api\/backups\/\S+\/link\?exp=\d+&sig=[0-9a-f]{64}/.exec(body);
+    if (!link || /filename=.*\.xlsx/.test(m.raw)) throw new Error('e-mail deveria trazer o link seguro e não o anexo');
+    const viaLink = await fetch(link[0].replace(/^https?:\/\/[^/]+/, BASE));
+    if (viaLink.status !== 200 || Buffer.from(await viaLink.arrayBuffer()).subarray(0, 2).toString() !== 'PK') throw new Error('link do e-mail não baixou a planilha');
     step(`"Testar envio agora" entregou a planilha para ${m.to.join(', ')}`);
     await d.screenshot({ path: `${OUT}/fase3-01-backup-email.png`, fullPage: true });
 

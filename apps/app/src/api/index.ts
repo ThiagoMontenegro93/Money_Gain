@@ -17,6 +17,7 @@ export const api = {
     create: (body: T.CreateUserBody) => http.post<T.UserDTO>('/users', body),
     updateMe: (body: T.UpdateMeBody) => http.put<T.UserDTO>('/users/me', body),
     update: (id: string, body: T.UpdateUserBody) => http.put<T.UserDTO>(`/users/${enc(id)}`, body),
+    unlock: (id: string) => http.post<T.UserDTO>(`/users/${enc(id)}/unlock`),
   },
   dashboard: () => http.get<T.DashboardDTO>('/dashboard'),
   clients: {
@@ -110,5 +111,9 @@ export const api = {
     testEmail: () => http.post<T.BackupDTO>('/backups/settings/test'),
     preview: (form: FormData) => http.upload<T.RestorePreview>('/backups/restore/preview', form),
     restore: (token: string, password: string) => http.post<T.RestoreResult>('/backups/restore', { token, password }),
+    offsite: () => http.get<T.OffsiteConfig>('/backups/offsite'),
+    saveOffsite: (b: T.OffsiteInput) => http.put<T.OffsiteConfig>('/backups/offsite', b),
+    testOffsite: () => http.post<{ ok: boolean; key: string }>('/backups/offsite/test'),
+    runOffsite: () => http.post<T.OffsiteConfig>('/backups/offsite/run'),
   },
 };

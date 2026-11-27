@@ -4,6 +4,7 @@ import { clearCache, setCacheUser } from '../offline/cache';
 import { loadApiUrl } from '../config';
 import { kvGet, kvRemove, kvSet } from '../offline/kv';
 import { setOutboxUser, startOutboxSync } from '../offline/outbox';
+import { setPrefetchUser } from '../offline/prefetch';
 import type { Role, UserDTO } from '../api/types';
 import { getToken, setToken } from './tokenStorage';
 
@@ -36,6 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const setUser = useCallback((u: UserDTO | null) => {
     setCacheUser(u?.id ?? null);
     void setOutboxUser(u?.id ?? null);
+    void setPrefetchUser(u?.id ?? null);
     if (u) void kvSet(SESSION_USER, JSON.stringify(u));
     setUserState(u);
   }, []);

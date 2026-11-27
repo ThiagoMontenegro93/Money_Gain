@@ -231,12 +231,17 @@ Status do documento: `VERIFICADO`, `PENDENTE`, `VENCIDO` (validade passou).
 | GET | /backups/:id/download | planilha `.xlsx` |
 | POST | /backups/:id/encrypted | `{ password }` (mín. 8) → arquivo `.lcbak` (AES-256-GCM, chave derivada com scrypt) |
 | POST | /backups/:id/email | envia o backup para os e-mails configurados |
-| GET/PUT | /backups/settings | `{ enabled, email, extraEmails[] }` |
+| GET/PUT | /backups/settings | `{ enabled, email, extraEmails[], protection: LINK\|SENHA\|ANEXO, filePassword? }` (a senha nunca volta; leitura traz `hasFilePassword`) |
+| GET | /backups/:id/link?exp&sig | **público**, link assinado do e-mail (vale 72 h) → planilha |
+| GET/PUT | /backups/offsite | backup na nuvem: `{ enabled, endpoint, region, bucket, accessKeyId, prefix, secretAccessKey?, password? }`; leitura traz `hasSecret, hasPassword, filesPending, last` |
+| POST | /backups/offsite/test | grava `teste-conexao.txt` no bucket |
+| POST | /backups/offsite/run | envia agora: backup `.lcbak` em `<pasta>/backups/` e fotos/comprovantes novos em `<pasta>/arquivos/<id>.lcbak` |
 | POST | /backups/settings/test | gera um backup e envia agora ("Testar envio agora") |
 | POST | /backups/restore/preview | multipart `file` (+ `filePassword` se `.lcbak`) → `{ valid, token, summary, counts, distribution[], errors[], warnings[], offlinePayments[] }` |
 | POST | /backups/restore | `{ token, password }` (senha do Super Admin) → `{ message, safetyBackupId, counts, offlinePaymentsCreated[], offlinePaymentsSkipped[] }` |
 
 Automático toda segunda 08:00 (America/Sao_Paulo); se o e-mail estiver ativo, envia em seguida. O token da validação vale 30 minutos e é de uso único.
+Backup na nuvem: todo dia 03:00, se ativo. Falhas (backup, nuvem, rotina das 00:00, WhatsApp das 09:00) viram notificação e e-mail de alerta.
 
 ## Notificações
 | GET | /notifications | `{ id, title, message, readAt, createdAt }[]` |

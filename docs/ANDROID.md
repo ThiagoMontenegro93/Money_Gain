@@ -33,6 +33,9 @@ A Apple **não instala APK** e não permite instalar apps fora da App Store/Test
 O workflow **Android APK** (`.github/workflows/android-apk.yml`) gera o APK a cada mudança no app e guarda como artefato do
 Actions (30 dias). Em *Actions → Android APK → Run workflow*, marcar *prerelease* também publica o APK em *Releases*.
 
+Cada APK gerado passa por um **teste no emulador** (job `emulador`, Android 14): instala, abre, espera a tela de entrada,
+gira a tela e confere que o app não fechou sozinho. As capturas e o log ficam no artefato `emulador-telas`.
+
 Para o CI assinar com a chave oficial, cadastre em *Settings → Secrets and variables → Actions*:
 - `LENDCONTROL_KEYSTORE_BASE64`: `base64 -w0 lendcontrol-release.keystore`
 - `LENDCONTROL_KEYSTORE_PASSWORD`: senha do arquivo `keystore.properties`
