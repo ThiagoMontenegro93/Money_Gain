@@ -1,5 +1,5 @@
 import { getApiUrl } from '../config';
-import { cacheRead, cacheWrite, isCacheable } from '../offline/cache';
+import { cacheRead, cacheReadFiltered, cacheWrite, isCacheable } from '../offline/cache';
 import { noteCacheServed, noteNetworkFail, noteNetworkOk } from '../offline/state';
 
 export class ApiError extends Error {
@@ -80,7 +80,7 @@ export async function request<T>(method: string, path: string, opts: RequestOpts
     return data;
   } catch (e) {
     if (!(e instanceof ApiError) || e.status !== 0) throw e;
-    const hit = await cacheRead<T>(full);
+    const hit = (await cacheRead<T>(full)) ?? (await cacheReadFiltered<T>(full));
     if (!hit) throw e;
     noteCacheServed(hit.t);
     return hit.d;

@@ -67,7 +67,7 @@ jobs:
       - name: Subir a API
         working-directory: apps/api
         run: |
-          pnpm seed > /dev/null
+          pnpm prisma:seed > /dev/null
           nohup node dist/main.js > "$RUNNER_TEMP/api.log" 2>&1 &
           for i in $(seq 1 60); do curl -sf localhost:3000/api/health && break; sleep 1; done
 
@@ -86,9 +86,9 @@ jobs:
       - name: Testes de tela (computador e celular)
         working-directory: apps/app
         run: |
-          (cd ../api && pnpm seed > /dev/null)
+          (cd ../api && pnpm prisma:seed > /dev/null)
           mkdir -p "$RUNNER_TEMP/telas"
-          for t in flow fase2 fase3 opcoes atraso-longo renegociacao offline responsive; do
+          for t in flow fase2 fase3 opcoes atraso-longo renegociacao offline offline-carteira responsive; do
             echo "::group::$t"
             node "e2e/$t.js" "$RUNNER_TEMP/telas"
             echo "::endgroup::"

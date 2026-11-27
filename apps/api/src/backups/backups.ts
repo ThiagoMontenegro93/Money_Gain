@@ -28,6 +28,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { gunzipSync, gzipSync } from 'zlib';
 import { z } from 'zod';
+import { AlertService } from '../common/alert.service';
 import { AuditService } from '../common/audit.service';
 import { AuthUser, CurrentUser, Public, Roles } from '../common/auth';
 import { Throttle } from '@nestjs/throttler';
@@ -137,7 +138,7 @@ const xd = (v: unknown) => {
 const quote = (t: string) => `"${t.replace(/"/g, '""')}"`;
 
 // ---------------------------------------------------------------- criptografia do .lcbak
-function encryptFile(plain: Buffer, password: string): Buffer {
+export function encryptFile(plain: Buffer, password: string): Buffer {
   const salt = randomBytes(16);
   const iv = randomBytes(12);
   const key = scryptSync(password, salt, 32, { N: 16384, r: 8, p: 1 });
@@ -145,7 +146,7 @@ function encryptFile(plain: Buffer, password: string): Buffer {
   const enc = Buffer.concat([cipher.update(plain), cipher.final()]);
   return Buffer.concat([ENC_MAGIC, salt, iv, cipher.getAuthTag(), enc]);
 }
-function decryptFile(buf: Buffer, password: string): Buffer | null {
+export function decryptFile(buf: Buffer, password: string): Buffer | null {
   try {
     const off = ENC_MAGIC.length;
     const salt = buf.subarray(off, off + 16);
@@ -175,6 +176,7 @@ export class BackupsService {
     private settings: SettingsService,
     private users: UsersService,
     private payments: PaymentsService,
+    private alerts: AlertService,
   ) {
     mkdirSync(this.dir, { recursive: true });
   }
@@ -692,7 +694,7 @@ export class BackupsService {
       if (cfg.enabled && cfg.email && this.mail.configured) await this.email(null, b.id);
     } catch (e) {
       this.logger.error(`Backup automático falhou: ${(e as Error).stack}`);
-      await this.audit.notifyAdmins('Backup automático falhou', (e as Error).message).catch(() => undefined);
+      await this.alerts.failure('Backup automático falhou', e);
     }
   }
 

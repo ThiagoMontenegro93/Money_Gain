@@ -507,6 +507,10 @@ model StoredFile {
   uploadedById String
   uploadedBy   User     @relation(fields: [uploadedById], references: [id])
   createdAt    DateTime @default(now())
+  /// Quando foi enviado (criptografado) para o backup na nuvem; null = ainda não enviado
+  offsiteAt    DateTime?
+
+  @@index([offsiteAt])
 }
 
 enum DocumentType {

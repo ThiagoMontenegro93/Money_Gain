@@ -24,6 +24,8 @@ import { MessagingController } from './messaging/messaging.controller';
 import { MessagingService } from './messaging/messaging.service';
 import { DocumentsController, DocumentsService } from './documents/documents';
 import { BackupsController, BackupsService } from './backups/backups';
+import { OffsiteController, OffsiteService } from './backups/offsite';
+import { AlertService } from './common/alert.service';
 import { MailService } from './common/mail.service';
 import { IdempotencyInterceptor } from './common/idempotency.interceptor';
 
@@ -48,6 +50,7 @@ if (jwtSecret.length < 32) throw new Error('JWT_SECRET deve ter ao menos 32 cara
     JobsController,
     MessagingController,
     DocumentsController,
+    OffsiteController,
     BackupsController,
   ],
   providers: [
@@ -69,6 +72,8 @@ if (jwtSecret.length < 32) throw new Error('JWT_SECRET deve ter ao menos 32 cara
     DocumentsService,
     MailService,
     BackupsService,
+    OffsiteService,
+    AlertService,
     IdempotencyInterceptor,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },

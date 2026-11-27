@@ -551,3 +551,21 @@ export type LongLateMode = 'OFF' | 'PERCENT' | 'FIXED';
 export interface LongLate { longLateMode: LongLateMode; longLateAfterDays: number; longLatePercent: number; longLateFixedCents: number }
 export interface LoanDefaults extends LongLate { allowAmortization: boolean; allowLateFee: boolean; multaDiaPercent: number }
 export interface LoanOptionsBody extends Partial<LongLate> { allowAmortization?: boolean; allowLateFee?: boolean; multaDiaPercent?: number }
+
+/** Backup fora do servidor (S3 compatível: AWS S3, Cloudflare R2, Backblaze B2, Wasabi). */
+export interface OffsiteInput {
+  enabled: boolean;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKeyId: string;
+  prefix: string;
+  secretAccessKey?: string;
+  password?: string;
+}
+export interface OffsiteConfig extends Omit<OffsiteInput, 'secretAccessKey' | 'password'> {
+  hasSecret: boolean;
+  hasPassword: boolean;
+  filesPending: number;
+  last: { at: string; ok: boolean; error?: string | null; backupKey?: string | null; filesSent?: number; filesPending?: number } | null;
+}

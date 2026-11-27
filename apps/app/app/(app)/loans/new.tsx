@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { brDateToISO, isoToBR, LoanMethod, LoanType, METHOD_LABEL, todayISO } from '@lendcontrol/core';
+import { brDateToISO, createLoanWithProjection, isoToBR, LoanMethod, LoanType, METHOD_LABEL, todayISO, viewInstallment, type CreateLoanInput } from '@lendcontrol/core';
 import { api } from '@/api';
 import { ApiError, errorMessage } from '@/api/http';
 import type { ClientListItem, CreateLoanBody, CreditLock, LoanPreview } from '@/api/types';
@@ -14,6 +14,8 @@ import { useToast } from '@/components/Toast';
 import { Badge, Button, Card, Checkbox, InlineError, Input, KV, Loading, Modal, MoneyInput, Notice, ScoreBadge, Segmented, Select, Stack } from '@/components/ui';
 import { useLayout } from '@/hooks/useLayout';
 import { useUsers } from '@/hooks/useUsers';
+import { QUEUED_MESSAGE, submitOrQueue } from '@/offline/outbox';
+import { useNetState } from '@/offline/state';
 import { colors } from '@/theme';
 import { brl, dateBR, decimalText, parseDecimal } from '@/utils/format';
 
@@ -63,6 +65,8 @@ export default function NewLoan() {
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [modal, setModal] = useState<CreditLock | null>(null);
+  const [previewLocal, setPreviewLocal] = useState(false);
+  const net = useNetState();
 
   // cliente pré-selecionado (?clientId=)
   useEffect(() => {
@@ -120,10 +124,24 @@ export default function NewLoan() {
     setStep(3);
     setPreviewing(true);
     setPreviewErr(null);
+    setPreviewLocal(false);
     try {
       setPreview(await api.loans.preview(body));
     } catch (e) {
-      setPreviewErr(errorMessage(e));
+      if (e instanceof ApiError && e.status === 0) {
+        // sem internet: calcula no aparelho com o mesmo motor do servidor
+        try {
+          const c = createLoanWithProjection(body as CreateLoanInput);
+          setPreview({
+            dueDate: c.dueDate,
+            installments: c.installments.map((i) => viewInstallment(i, c.loan, body.releaseDate)),
+            totalInterestCents: c.installments.reduce((sum, i) => sum + i.interestCents, 0),
+          } as LoanPreview);
+          setPreviewLocal(true);
+        } catch (le) {
+          setPreviewErr(errorMessage(le));
+        }
+      } else setPreviewErr(errorMessage(e));
     } finally {
       setPreviewing(false);
     }
@@ -134,9 +152,20 @@ export default function NewLoan() {
     setCreating(true);
     setErr(null);
     try {
-      const loan = await api.loans.create({ ...body, clientId: client.id, ...(riskAcknowledged ? { riskAcknowledged: true } : {}) });
-      toast(`Empréstimo #${loan.code} criado`);
-      router.replace(`/loans/${loan.id}`);
+      const r = await submitOrQueue<{ id: string; code: number }>({
+        kind: 'loan',
+        label: `Novo empréstimo de ${brl(body.principalCents)} para ${client.fullName}`,
+        path: '/loans',
+        body: { ...body, clientId: client.id, ...(riskAcknowledged ? { riskAcknowledged: true } : {}) },
+        meta: { clientId: client.id },
+      });
+      if (r.queued) {
+        toast(QUEUED_MESSAGE, 'info');
+        router.replace(`/clients/${client.id}`);
+        return;
+      }
+      toast(`Empréstimo #${r.data.code} criado`);
+      router.replace(`/loans/${r.data.id}`);
     } catch (e) {
       if (e instanceof ApiError && e.code === 'RISK_NOT_ACKNOWLEDGED') {
         setModal({ level: 'WARNING', title: '⚠️ Cliente de risco', message: e.message });
@@ -157,6 +186,8 @@ export default function NewLoan() {
       setLock(check);
     } catch (e) {
       setCreating(false);
+      // sem internet: a análise de crédito é feita pelo servidor quando o envio subir
+      if (e instanceof ApiError && e.status === 0) return doCreate(false);
       return setErr(errorMessage(e));
     }
     setCreating(false);
@@ -273,6 +304,13 @@ export default function NewLoan() {
               {preview ? <KV k="Juros previstos" v={brl(totalInterest)} /> : null}
             </View>
             {lock && lock.level !== 'OK' ? <Notice tone={lock.level === 'BLOCKED' ? 'danger' : 'warning'} text={`${lock.title}${lock.message ? ` - ${lock.message}` : ''}`} /> : null}
+            {net.offline || previewLocal ? (
+              <Notice
+                testID="loan-offline-notice"
+                tone="warning"
+                text="Sem internet: as parcelas foram calculadas no aparelho e o empréstimo fica salvo para enviar quando a conexão voltar. A análise de crédito é feita nessa hora: se o cliente estiver bloqueado ou em risco, o envio aparece com erro em Envios pendentes."
+              />
+            ) : null}
           </Card>
           {previewing ? <Loading text="Calculando parcelas..." /> : null}
           <InlineError message={previewErr} />

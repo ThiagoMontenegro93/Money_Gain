@@ -38,10 +38,24 @@ services:
       OWNER_PASSWORD: ${OWNER_PASSWORD:-}
       SMTP_URL: ${SMTP_URL:-}
       SMTP_FROM: ${SMTP_FROM:-LendControl <backup@lendcontrol.app>}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      ALERT_EMAIL: ${ALERT_EMAIL:-}
     volumes:
       - appdata:/data
     ports:
       - "${APP_PORT:-3000}:3000"
+  # Vigia: avisa por e-mail quando o servidor cai e quando volta (item 6)
+  watchdog:
+    build: .
+    restart: unless-stopped
+    depends_on: [app]
+    command: ["node", "dist/watchdog.js"]
+    healthcheck: { disable: true }
+    environment:
+      WATCH_URL: http://app:3000/api/health
+      ALERT_EMAIL: ${ALERT_EMAIL:-${OWNER_EMAIL:-}}
+      SMTP_URL: ${SMTP_URL:-}
+      SMTP_FROM: ${SMTP_FROM:-LendControl <backup@lendcontrol.app>}
   # HTTPS automático (Let's Encrypt). Ative com --profile https e defina DOMAIN no .env.prod
   caddy:
     image: caddy:2.10-alpine

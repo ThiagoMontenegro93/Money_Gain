@@ -18,6 +18,7 @@ import {
 } from '@lendcontrol/core';
 import { MessageLog, Prisma } from '@prisma/client';
 import { DelayedError, Job, Queue, Worker } from 'bullmq';
+import { AlertService } from '../common/alert.service';
 import { AuditService } from '../common/audit.service';
 import { AuthUser } from '../common/auth';
 import { CryptoService } from '../common/crypto.service';
@@ -48,6 +49,7 @@ export class MessagingService implements OnModuleInit, OnModuleDestroy {
     private settings: SettingsService,
     private crypto: CryptoService,
     private audit: AuditService,
+    private alerts: AlertService,
   ) {}
 
   async onModuleInit() {
@@ -256,6 +258,7 @@ export class MessagingService implements OnModuleInit, OnModuleDestroy {
       await this.scan();
     } catch (e) {
       this.logger.error(`Varredura WhatsApp falhou: ${(e as Error).stack}`);
+      await this.alerts.failure('Cobrança diária por WhatsApp (09:00) falhou', e);
     }
   }
 

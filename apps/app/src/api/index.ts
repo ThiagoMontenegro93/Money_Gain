@@ -111,5 +111,9 @@ export const api = {
     testEmail: () => http.post<T.BackupDTO>('/backups/settings/test'),
     preview: (form: FormData) => http.upload<T.RestorePreview>('/backups/restore/preview', form),
     restore: (token: string, password: string) => http.post<T.RestoreResult>('/backups/restore', { token, password }),
+    offsite: () => http.get<T.OffsiteConfig>('/backups/offsite'),
+    saveOffsite: (b: T.OffsiteInput) => http.put<T.OffsiteConfig>('/backups/offsite', b),
+    testOffsite: () => http.post<{ ok: boolean; key: string }>('/backups/offsite/test'),
+    runOffsite: () => http.post<T.OffsiteConfig>('/backups/offsite/run'),
   },
 };

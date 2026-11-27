@@ -7,6 +7,7 @@ import { errorMessage, http } from '@/api/http';
 import type { MessageTemplateDTO, WaProvider, WhatsAppConfigBody, WhatsAppConfigDTO } from '@/api/types';
 import { ROLE_LABEL, useAuth } from '@/auth/AuthContext';
 import { BackupPanel } from '@/components/BackupPanel';
+import { OfflineDataCard } from '@/components/OfflineDataCard';
 import { MessageLogList, MessageStatusBadge } from '@/components/MessageLogList';
 import { describeLongLate, draftFromLongLate, LongLateEditor, longLateFromDraft } from '@/components/LongLateEditor';
 import { Screen } from '@/components/Screen';
@@ -98,6 +99,8 @@ function ProfileTab() {
           <Button testID="pw-save" title="Alterar senha" icon="🔑" variant="secondary" loading={pwBusy} onPress={() => void savePassword()} style={{ alignSelf: 'flex-start' }} />
         </Card>
       </Stack>
+
+      <OfflineDataCard />
 
       {hasRole('SUPER_ADMIN') ? (
         <Card title="Rotina diária" style={{ marginBottom: 12 }}>

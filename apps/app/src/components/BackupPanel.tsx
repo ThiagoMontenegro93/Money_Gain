@@ -132,6 +132,121 @@ function EmailSettings({ smtpConfigured }: { smtpConfigured: boolean }) {
   );
 }
 
+// ------------------------------------------------------- backup na nuvem
+function OffsiteSettings() {
+  const toast = useToast();
+  const { isDesktop } = useLayout();
+  const { data, error, loading, reload } = useAsync(() => api.backups.offsite(), []);
+  const [f, setF] = useState({ enabled: false, endpoint: '', region: 'auto', bucket: '', accessKeyId: '', prefix: 'lendcontrol/', secretAccessKey: '', password: '' });
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<'save' | 'test' | 'run' | null>(null);
+
+  useEffect(() => {
+    if (!data) return;
+    setF({ enabled: data.enabled, endpoint: data.endpoint, region: data.region || 'auto', bucket: data.bucket, accessKeyId: data.accessKeyId, prefix: data.prefix, secretAccessKey: '', password: '' });
+  }, [data]);
+
+  if (loading && !data) return <Loading />;
+  if (error) return <ErrorState message={error} onRetry={reload} />;
+  const set = (p: Partial<typeof f>) => setF((o) => ({ ...o, ...p }));
+
+  const save = async (quiet = false) => {
+    if (f.password && f.password.length < 8) {
+      setErr('A senha do backup na nuvem precisa ter ao menos 8 caracteres');
+      return false;
+    }
+    setErr(null);
+    setBusy('save');
+    try {
+      await api.backups.saveOffsite({ ...f, secretAccessKey: f.secretAccessKey || undefined, password: f.password || undefined });
+      reload();
+      if (!quiet) toast('Backup na nuvem salvo');
+      return true;
+    } catch (e) {
+      setErr(errorMessage(e));
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  };
+  const act = async (kind: 'test' | 'run') => {
+    if (f.secretAccessKey || f.password) if (!(await save(true))) return;
+    setBusy(kind);
+    try {
+      if (kind === 'test') {
+        await api.backups.testOffsite();
+        toast('Conexão ok: arquivo de teste gravado no bucket');
+      } else {
+        const r = await api.backups.runOffsite();
+        toast(`Backup enviado para a nuvem (+${r.last?.filesSent ?? 0} arquivo(s))`);
+      }
+      setErr(null);
+    } catch (e) {
+      setErr(errorMessage(e));
+    } finally {
+      setBusy(null);
+      reload();
+    }
+  };
+  const last = data?.last;
+
+  return (
+    <Card title="☁️ Backup na nuvem (fora do servidor)" testID="offsite-card">
+      <Text style={styles.dim}>
+        Todo dia às 03:00 o sistema envia o backup completo e as fotos, documentos e comprovantes para um armazenamento seu (Amazon S3, Cloudflare R2, Backblaze B2 ou Wasabi). Tudo vai criptografado com a senha abaixo: guarde essa senha, sem ela os arquivos não abrem.
+      </Text>
+      {last ? (
+        <View testID="offsite-last" style={{ marginTop: 8 }}>
+          {last.ok ? (
+            <Notice tone="success" text={`Último envio ${dateTimeBR(last.at)}: ok (${last.filesSent ?? 0} arquivo(s) novos${last.filesPending ? `, ${last.filesPending} ficam para o próximo` : ''}).`} />
+          ) : (
+            <Notice tone="danger" text={`Último envio ${dateTimeBR(last.at)} falhou: ${last.error ?? 'erro desconhecido'}`} />
+          )}
+        </View>
+      ) : null}
+      <View style={{ height: 10 }} />
+      <Checkbox testID="offsite-enabled" checked={f.enabled} onChange={(enabled) => set({ enabled })} label="Ativar envio diário às 03:00" />
+      <Stack row={isDesktop} gap={12} style={{ marginTop: 10 }}>
+        <Input testID="offsite-endpoint" label="Endereço do armazenamento" value={f.endpoint} onChangeText={(endpoint) => set({ endpoint })} placeholder="https://<conta>.r2.cloudflarestorage.com" autoCapitalize="none" style={{ flex: 2 }} />
+        <Input testID="offsite-region" label="Região" value={f.region} onChangeText={(region) => set({ region })} placeholder="auto ou sa-east-1" autoCapitalize="none" style={{ flex: 1 }} />
+      </Stack>
+      <Stack row={isDesktop} gap={12}>
+        <Input testID="offsite-bucket" label="Bucket" value={f.bucket} onChangeText={(bucket) => set({ bucket })} placeholder="lendcontrol-backup" autoCapitalize="none" style={{ flex: 1 }} />
+        <Input testID="offsite-prefix" label="Pasta dentro do bucket" value={f.prefix} onChangeText={(prefix) => set({ prefix })} placeholder="lendcontrol/" autoCapitalize="none" style={{ flex: 1 }} />
+      </Stack>
+      <Stack row={isDesktop} gap={12}>
+        <Input testID="offsite-key" label="Chave de acesso (Access Key ID)" value={f.accessKeyId} onChangeText={(accessKeyId) => set({ accessKeyId })} autoCapitalize="none" style={{ flex: 1 }} />
+        <Input
+          testID="offsite-secret"
+          label={data?.hasSecret ? 'Chave secreta (em branco mantém a atual)' : 'Chave secreta (Secret Access Key)'}
+          secure
+          value={f.secretAccessKey}
+          onChangeText={(secretAccessKey) => set({ secretAccessKey })}
+          autoCapitalize="none"
+          style={{ flex: 1 }}
+        />
+      </Stack>
+      <Input
+        testID="offsite-password"
+        label={data?.hasPassword ? 'Nova senha do backup na nuvem (em branco mantém a atual)' : 'Senha do backup na nuvem'}
+        secure
+        value={f.password}
+        onChangeText={(password) => set({ password })}
+        placeholder="mínimo 8 caracteres"
+        autoCapitalize="none"
+        style={{ maxWidth: 420 }}
+      />
+      {data && data.filesPending > 0 ? <Text testID="offsite-pending" style={styles.dim}>{data.filesPending} foto(s)/comprovante(s) ainda não enviados.</Text> : null}
+      <InlineError message={err} />
+      <View style={[styles.btns, { marginTop: 6 }]}>
+        <Button testID="offsite-save" title="Salvar" icon="💾" loading={busy === 'save'} onPress={() => void save()} />
+        <Button testID="offsite-test" title="Testar conexão" icon="🔌" variant="secondary" loading={busy === 'test'} disabled={!!busy} onPress={() => void act('test')} />
+        <Button testID="offsite-run" title="Enviar agora" icon="☁️" variant="secondary" loading={busy === 'run'} disabled={!!busy} onPress={() => void act('run')} />
+      </View>
+    </Card>
+  );
+}
+
 // --------------------------------------------------------------- histórico
 function History({ items, onChanged }: { items: BackupDTO[]; onChanged: () => void }) {
   const toast = useToast();
@@ -351,6 +466,7 @@ export function BackupPanel() {
   return (
     <View style={{ gap: 14 }}>
       <EmailSettings smtpConfigured={!!data?.smtpConfigured} />
+      <OffsiteSettings />
       <History items={data?.backups ?? []} onChanged={reload} />
       <Restore onDone={reload} />
       <Card title="📜 Log de restaurações" testID="restore-log">
