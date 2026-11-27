@@ -1,4 +1,4 @@
-import { API_URL } from '../config';
+import { getApiUrl } from '../config';
 import { cacheRead, cacheWrite, isCacheable } from '../offline/cache';
 import { noteCacheServed, noteNetworkFail, noteNetworkOk } from '../offline/state';
 
@@ -53,7 +53,7 @@ async function confirmSessionLost(path: string) {
   const token = authToken;
   if (path === '/auth/me') return onUnauthorized?.();
   try {
-    const r = await fetch(`${API_URL}/auth/me`, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } });
+    const r = await fetch(`${getApiUrl()}/auth/me`, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } });
     if (r.status === 401 && token === authToken) onUnauthorized?.();
   } catch {
     /* sem rede: mantém a sessão */
@@ -100,10 +100,10 @@ async function send<T>(method: string, path: string, opts: RequestOpts): Promise
   const ctrl = opts.timeoutMs && typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = ctrl ? setTimeout(() => ctrl.abort(), opts.timeoutMs) : null;
   try {
-    res = await fetch(`${API_URL}${path}${buildQuery(opts.query)}`, { method, headers, body, signal: ctrl?.signal });
+    res = await fetch(`${getApiUrl()}${path}${buildQuery(opts.query)}`, { method, headers, body, signal: ctrl?.signal });
   } catch {
     noteNetworkFail();
-    throw new ApiError(0, `Não foi possível conectar à API (${API_URL}). Verifique sua conexão com a internet.`);
+    throw new ApiError(0, `Não foi possível conectar à API (${getApiUrl()}). Verifique sua conexão com a internet.`);
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -141,9 +141,9 @@ export async function fetchBlob(path: string, init: { method?: string; body?: un
   if (init.body !== undefined) headers['Content-Type'] = 'application/json';
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, { headers, method: init.method ?? 'GET', body: init.body === undefined ? undefined : JSON.stringify(init.body) });
+    res = await fetch(`${getApiUrl()}${path}`, { headers, method: init.method ?? 'GET', body: init.body === undefined ? undefined : JSON.stringify(init.body) });
   } catch {
-    throw new ApiError(0, `Não foi possível conectar à API (${API_URL}). Verifique se o servidor está no ar.`);
+    throw new ApiError(0, `Não foi possível conectar à API (${getApiUrl()}). Verifique se o servidor está no ar.`);
   }
   if (!res.ok) {
     const text = await res.text();

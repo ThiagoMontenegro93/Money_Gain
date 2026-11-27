@@ -5,7 +5,8 @@ web-build/
 *.log
 .env
 storage/
-backups/
+/backups/
+apps/api/backups/
 coverage/
 storage-test/
 .env.prod

@@ -3,7 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { api } from '../api';
 import type { FileDTO } from '../api/types';
-import { API_URL } from '../config';
+import { getApiUrl } from '../config';
 
 const MAX = 10 * 1024 * 1024;
 
@@ -66,6 +66,7 @@ export async function uploadFile(f: PickedFile): Promise<FileDTO> {
 /** Converte a URL assinada (relativa ou absoluta) em URL abrível. */
 export function absoluteUrl(url: string): string {
   if (/^https?:\/\//i.test(url)) return url;
+  const API_URL = getApiUrl();
   const m = /^(https?:\/\/[^/]+)(\/.*)?$/.exec(API_URL);
   const origin = m?.[1] ?? '';
   const basePath = m?.[2] ?? '';
