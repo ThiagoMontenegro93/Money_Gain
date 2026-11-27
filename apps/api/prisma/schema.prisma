@@ -22,28 +22,31 @@ enum Role {
 }
 
 model User {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   name              String
-  email             String   @unique
+  email             String    @unique
   phone             String?
   /// Chave PIX do credor usada nas mensagens ({pix_chave})
   pixKey            String?
   passwordHash      String
-  role              Role     @default(OPERATOR)
-  isActive          Boolean  @default(true)
+  /// Senhas erradas seguidas (zera no login certo) e bloqueio temporário do acesso
+  failedLogins      Int       @default(0)
+  lockedUntil       DateTime?
+  role              Role      @default(OPERATOR)
+  isActive          Boolean   @default(true)
   /// % de comissão do funcionário sobre juros + multa recebidos (ex.: 30)
-  commissionPercent Decimal  @default(30) @db.Decimal(5, 2)
+  commissionPercent Decimal   @default(30) @db.Decimal(5, 2)
   /// Modo revolving: principal devolvido volta para o funcionário re-emprestar
-  revolving         Boolean  @default(true)
+  revolving         Boolean   @default(true)
   // Carteira (employee_wallets) - mantida em colunas para leitura rápida; o razão é CashLedger
-  capitalDisponivel Decimal  @default(0) @db.Decimal(14, 2)
-  capitalEmprestado Decimal  @default(0) @db.Decimal(14, 2)
-  comissaoAPagar    Decimal  @default(0) @db.Decimal(14, 2)
+  capitalDisponivel Decimal   @default(0) @db.Decimal(14, 2)
+  capitalEmprestado Decimal   @default(0) @db.Decimal(14, 2)
+  comissaoAPagar    Decimal   @default(0) @db.Decimal(14, 2)
   /// Recebido de clientes que ainda deve ser repassado ao dono
-  paraRepassar      Decimal  @default(0) @db.Decimal(14, 2)
-  recebidoClientes  Decimal  @default(0) @db.Decimal(14, 2)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  paraRepassar      Decimal   @default(0) @db.Decimal(14, 2)
+  recebidoClientes  Decimal   @default(0) @db.Decimal(14, 2)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   clientsResponsible Client[]            @relation("ClientResponsible")
   loansFunded        Loan[]              @relation("LoanFunder")

@@ -2,10 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { api } from '@/api';
 import { errorMessage } from '@/api/http';
-import type { BackupDTO, RestorePreview, RestoreResult } from '@/api/types';
+import type { BackupDTO, BackupEmailProtection, RestorePreview, RestoreResult } from '@/api/types';
 import { PromptModal } from '@/components/PromptModal';
 import { useToast } from '@/components/Toast';
-import { Badge, Button, Card, Checkbox, Empty, ErrorState, InlineError, Input, Loading, Modal, Notice, Stack } from '@/components/ui';
+import { Badge, Button, Card, Checkbox, Empty, ErrorState, InlineError, Input, Loading, Modal, Notice, Segmented, Stack } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
 import { useLayout } from '@/hooks/useLayout';
 import { colors } from '@/theme';
@@ -23,6 +23,8 @@ function EmailSettings({ smtpConfigured }: { smtpConfigured: boolean }) {
   const [enabled, setEnabled] = useState(false);
   const [email, setEmail] = useState('');
   const [extra, setExtra] = useState('');
+  const [protection, setProtection] = useState<BackupEmailProtection>('LINK');
+  const [filePassword, setFilePassword] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<'save' | 'test' | null>(null);
   const [saved, setSaved] = useState(false);
@@ -32,6 +34,8 @@ function EmailSettings({ smtpConfigured }: { smtpConfigured: boolean }) {
     setEnabled(data.enabled);
     setEmail(data.email);
     setExtra(data.extraEmails.join(', '));
+    setProtection(data.protection ?? 'LINK');
+    setFilePassword('');
   }, [data]);
 
   if (loading && !data) return <Loading />;
@@ -43,6 +47,8 @@ function EmailSettings({ smtpConfigured }: { smtpConfigured: boolean }) {
     if (email.trim() && !isEmail(email)) return 'E-mail inválido';
     const bad = extras.find((e) => !isEmail(e));
     if (bad) return `E-mail adicional inválido: ${bad}`;
+    if (protection === 'SENHA' && !data?.hasFilePassword && filePassword.length < 8) return 'Defina a senha do arquivo (mínimo 8 caracteres)';
+    if (filePassword && filePassword.length < 8) return 'A senha do arquivo precisa ter ao menos 8 caracteres';
     return null;
   };
   const save = async () => {
@@ -52,8 +58,10 @@ function EmailSettings({ smtpConfigured }: { smtpConfigured: boolean }) {
     if (v) return;
     setBusy('save');
     try {
-      await api.backups.saveSettings({ enabled, email: email.trim(), extraEmails: extras });
+      await api.backups.saveSettings({ enabled, email: email.trim(), extraEmails: extras, protection, ...(filePassword ? { filePassword } : {}) });
       setSaved(true);
+      setFilePassword('');
+      reload();
       toast('E-mail de backup salvo');
     } catch (e) {
       setErr(errorMessage(e));
@@ -83,6 +91,37 @@ function EmailSettings({ smtpConfigured }: { smtpConfigured: boolean }) {
         <Input testID="backup-email" label="E-mail para receber o backup" value={email} onChangeText={setEmail} placeholder="seuemail@exemplo.com" keyboardType="email-address" autoCapitalize="none" style={{ flex: 1 }} />
         <Input testID="backup-extra" label="E-mails adicionais (separados por vírgula)" value={extra} onChangeText={setExtra} placeholder="contador@exemplo.com, socio@exemplo.com" autoCapitalize="none" style={{ flex: 1 }} />
       </Stack>
+      <Segmented
+        testIDPrefix="backup-protection"
+        label="Como a planilha vai no e-mail (ela tem CPF completo)"
+        value={protection}
+        onChange={setProtection}
+        options={[
+          { value: 'LINK', label: '🔗 Link seguro (72 h)' },
+          { value: 'SENHA', label: '🔒 Anexo com senha' },
+          { value: 'ANEXO', label: '📎 Anexo aberto' },
+        ]}
+      />
+      <Text style={styles.dim}>
+        {protection === 'LINK'
+          ? 'Recomendado. O e-mail não leva a planilha: leva um link que baixa o arquivo por 72 horas. Cada download fica registrado.'
+          : protection === 'SENHA'
+            ? 'O e-mail leva o arquivo .lcbak criptografado. Ele só abre aqui no sistema (Restaurar backup) com a senha do arquivo.'
+            : 'O e-mail leva a planilha aberta. Qualquer pessoa com acesso ao e-mail vê os CPFs. Não recomendado.'}
+      </Text>
+      {protection === 'SENHA' ? (
+        <Input
+          testID="backup-file-password"
+          label={data?.hasFilePassword ? 'Nova senha do arquivo (deixe em branco para manter a atual)' : 'Senha do arquivo'}
+          secure
+          value={filePassword}
+          onChangeText={setFilePassword}
+          placeholder="mínimo 8 caracteres"
+          autoCapitalize="none"
+          style={{ maxWidth: 420, marginTop: 8 }}
+        />
+      ) : null}
+      {protection === 'ANEXO' ? <Notice tone="warning" text="Planilha com CPF completo anexada sem proteção." /> : null}
       <InlineError message={err} />
       {saved ? <Text testID="backup-email-saved" style={{ color: colors.success, fontWeight: '800', marginBottom: 8 }}>✅ E-mail de backup salvo</Text> : null}
       <View style={styles.btns}>

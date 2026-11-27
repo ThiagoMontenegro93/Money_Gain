@@ -7,7 +7,7 @@ import { ROLE_LABEL, useAuth } from '@/auth/AuthContext';
 import { Screen } from '@/components/Screen';
 import { useToast } from '@/components/Toast';
 import { TransferList } from '@/components/TransferList';
-import { Badge, Button, Card, Checkbox, Column, Empty, ErrorState, Grid, InlineError, Input, Loading, Modal, MoneyInput, Segmented, Select, StatCard, Table, Stack } from '@/components/ui';
+import { Badge, Button, Card, Checkbox, Column, Empty, ErrorState, Grid, InlineError, Input, Loading, Modal, MoneyInput, Notice, Segmented, Select, StatCard, Table, Stack } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
 import { useLayout } from '@/hooks/useLayout';
 import { colors } from '@/theme';
@@ -65,7 +65,8 @@ function Ledger({ userId }: { userId?: string }) {
 
 function UsersList({ users, meId, onEdit }: { users: UserDTO[]; meId?: string; onEdit: (u: UserDTO) => void }) {
   const { isDesktop } = useLayout();
-  const status = (u: UserDTO) => (u.isActive ? <Badge size="sm" text="Ativo" bg="#064E3B" color="#A7F3D0" /> : <Badge size="sm" text="Inativo" bg="#374151" />);
+  const status = (u: UserDTO) =>
+    u.lockedUntil ? <Badge size="sm" text="🔒 Bloqueado" bg="#7F1D1D" color="#FFF" /> : u.isActive ? <Badge size="sm" text="Ativo" bg="#064E3B" color="#A7F3D0" /> : <Badge size="sm" text="Inativo" bg="#374151" />;
   if (!isDesktop) {
     return (
       <View testID="users-list">
@@ -230,6 +231,7 @@ export default function Team() {
                   <Badge text={`Comissão ${u.commissionPercent}%`} bg={colors.surface2} />
                   {u.revolving ? <Badge text="Revolving" bg="#1E3A8A" color="#BFDBFE" /> : null}
                   {!u.isActive ? <Badge text="Inativo" bg="#374151" /> : null}
+                  {u.lockedUntil ? <Badge testID={`locked-${u.id}`} text="🔒 Bloqueado por senha errada" bg="#7F1D1D" color="#FFF" /> : null}
                   {isOwner ? <Button size="sm" title="Repassar Capital" icon="💸" onPress={() => openTransfer({ type: 'REPASSE_CAPITAL', to: u })} /> : null}
                   {isOwner ? <Button size="sm" title="Pagar Comissão" icon="💼" variant="secondary" disabled={!u.wallet.comissaoAPagarCents} onPress={() => openTransfer({ type: 'PAGAMENTO_COMISSAO', to: u, max: u.wallet.comissaoAPagarCents })} /> : null}
                   <Button size="sm" title="Extrato" icon="📒" variant="ghost" onPress={() => setLedgerUser(u.id)} />
@@ -287,6 +289,30 @@ export default function Team() {
         <Segmented testIDPrefix="eu-role" label="Papel" value={eu.role} onChange={(v) => setEu({ ...eu, role: v })} options={[{ value: 'OPERATOR', label: 'Funcionário' }, { value: 'ADMIN', label: 'Administrador' }, { value: 'SUPER_ADMIN', label: 'Dono' }]} />
         <Checkbox checked={eu.revolving} onChange={(v) => setEu({ ...eu, revolving: v })} label="Revolving: principal recebido volta para o funcionário re-emprestar" />
         <Checkbox testID="eu-active" checked={eu.isActive} onChange={(v) => setEu({ ...eu, isActive: v })} label={eu.isActive ? 'Ativo (pode entrar no sistema)' : 'Inativo: não consegue mais fazer login'} />
+        {edit?.lockedUntil ? (
+          <View style={{ gap: 8, marginBottom: 8 }}>
+            <Notice tone="danger" text={`🔒 Acesso bloqueado até ${new Date(edit.lockedUntil).toLocaleString('pt-BR')} por ${edit.failedLogins ?? 0} senhas erradas seguidas.`} />
+            <View style={{ flexDirection: 'row' }}>
+              <Button
+                testID="eu-unlock"
+                size="sm"
+                title="Desbloquear acesso"
+                icon="🔓"
+                variant="warning"
+                onPress={async () => {
+                  try {
+                    const u = await api.users.unlock(edit.id);
+                    setEdit(u);
+                    toast('Acesso desbloqueado');
+                    void reload();
+                  } catch (e) {
+                    toast(errorMessage(e), 'error');
+                  }
+                }}
+              />
+            </View>
+          </View>
+        ) : null}
         {edit?.id === user?.id ? <Text style={{ color: colors.warning, fontSize: 12, fontWeight: '700' }}>Você está editando o seu próprio usuário: não é possível se desativar ou se rebaixar.</Text> : null}
         <InlineError message={eErr} />
       </Modal>

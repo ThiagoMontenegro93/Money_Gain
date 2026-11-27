@@ -2,14 +2,17 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   Injectable,
+  Ip,
   Logger,
   NotFoundException,
   Param,
   Post,
   Put,
+  Query,
   Res,
   UploadedFile,
   UseInterceptors,
@@ -26,7 +29,8 @@ import { join, resolve } from 'path';
 import { gunzipSync, gzipSync } from 'zlib';
 import { z } from 'zod';
 import { AuditService } from '../common/audit.service';
-import { AuthUser, CurrentUser, Roles } from '../common/auth';
+import { AuthUser, CurrentUser, Public, Roles } from '../common/auth';
+import { Throttle } from '@nestjs/throttler';
 import { CryptoService } from '../common/crypto.service';
 import { MailService } from '../common/mail.service';
 import { PrismaService } from '../common/prisma.service';
@@ -82,18 +86,36 @@ interface PendingRestore {
   offlinePayments: OfflinePayment[];
   expires: number;
 }
+/**
+ * Como o backup vai por e-mail (a planilha tem CPF completo):
+ *  - LINK: sem anexo; o e-mail traz um link que baixa a planilha por 72 h (recomendado).
+ *  - SENHA: anexa o arquivo .lcbak criptografado com a senha do arquivo (restaura em Configurações > Backup).
+ *  - ANEXO: anexa a planilha aberta (modo antigo, não recomendado).
+ */
+export type EmailProtection = 'LINK' | 'SENHA' | 'ANEXO';
 export interface EmailConfig {
   enabled: boolean;
   email: string;
   extraEmails: string[];
+  protection: EmailProtection;
+  /** Só na leitura: se já existe senha do arquivo salva (a senha nunca é devolvida). */
+  hasFilePassword?: boolean;
 }
+interface StoredEmailConfig extends Omit<EmailConfig, 'hasFilePassword'> {
+  filePasswordEnc?: string | null;
+}
+const LINK_TTL_S = 72 * 3600;
 
 const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const settingsSchema = z.object({
   enabled: z.boolean(),
   email: z.string().trim().toLowerCase().max(200).refine((v) => v === '' || emailRx.test(v), 'E-mail inválido'),
   extraEmails: z.array(z.string().trim().toLowerCase().max(200).refine((v) => emailRx.test(v), 'E-mail adicional inválido')).max(10).default([]),
+  protection: z.enum(['LINK', 'SENHA', 'ANEXO']).default('LINK'),
+  /** Nova senha do arquivo (modo SENHA). Em branco mantém a atual. */
+  filePassword: z.string().min(8, 'A senha do arquivo precisa ter ao menos 8 caracteres').max(200).optional().or(z.literal('')),
 });
+type SettingsBody = z.infer<typeof settingsSchema>;
 
 const pad = (n: number) => String(n).padStart(2, '0');
 /** Data/hora em America/Sao_Paulo para nomes de arquivo e textos. */
@@ -190,16 +212,48 @@ export class BackupsService {
     return { backups: backups.map((b) => this.dto(b, names)), restores: restores.map((b) => this.dto(b, names)), smtpConfigured: this.mail.configured };
   }
 
-  getSettings(): Promise<EmailConfig> {
-    return this.settings.get<EmailConfig>(SETTINGS_KEY, { enabled: false, email: '', extraEmails: [] });
+  private async storedSettings(): Promise<StoredEmailConfig> {
+    // configurações antigas não têm "protection": passam a usar o link (sem anexo)
+    const c = await this.settings.get<Partial<StoredEmailConfig>>(SETTINGS_KEY, {});
+    return { enabled: false, email: '', extraEmails: [], protection: 'LINK', filePasswordEnc: null, ...c } as StoredEmailConfig;
   }
 
-  async saveSettings(u: AuthUser, b: EmailConfig) {
+  private publicView(c: StoredEmailConfig): EmailConfig {
+    return { enabled: c.enabled, email: c.email, extraEmails: c.extraEmails ?? [], protection: c.protection ?? 'LINK', hasFilePassword: !!c.filePasswordEnc };
+  }
+
+  async getSettings(): Promise<EmailConfig> {
+    return this.publicView(await this.storedSettings());
+  }
+
+  async saveSettings(u: AuthUser, b: SettingsBody) {
     if (b.enabled && !b.email) throw new BadRequestException({ message: 'Informe o e-mail que vai receber o backup', code: 'VALIDATION' });
+    const current = await this.storedSettings();
+    const filePasswordEnc = b.filePassword ? this.crypto.encrypt(b.filePassword) : (current.filePasswordEnc ?? null);
+    if (b.protection === 'SENHA' && !filePasswordEnc)
+      throw new BadRequestException({ message: 'Defina a senha do arquivo para enviar o backup criptografado', code: 'VALIDATION' });
     const extra = [...new Set(b.extraEmails)].filter((e) => e !== b.email);
-    const saved = await this.settings.set<EmailConfig>(SETTINGS_KEY, { enabled: b.enabled, email: b.email, extraEmails: extra });
-    await this.audit.log(u.id, 'UPDATE', 'Setting', SETTINGS_KEY, { ...saved });
-    return saved;
+    const saved = await this.settings.set<StoredEmailConfig>(SETTINGS_KEY, { enabled: b.enabled, email: b.email, extraEmails: extra, protection: b.protection, filePasswordEnc });
+    const view = this.publicView(saved);
+    await this.audit.log(u.id, 'UPDATE', 'Setting', SETTINGS_KEY, { ...view, filePasswordChanged: !!b.filePassword });
+    return view;
+  }
+
+  /** Link assinado para baixar a planilha (usado no e-mail em vez do anexo). */
+  private emailLink(id: string) {
+    const exp = Math.floor(Date.now() / 1000) + LINK_TTL_S;
+    const sig = this.crypto.sign(`backup.${id}.${exp}`);
+    const base = (process.env.PUBLIC_URL || process.env.PUBLIC_API_ORIGIN || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
+    return { url: `${base}/api/backups/${id}/link?exp=${exp}&sig=${sig}`, exp };
+  }
+
+  async linkDownload(id: string, exp: string, sig: string, ip: string) {
+    const e = Number(exp);
+    if (!e || e < Date.now() / 1000) throw new ForbiddenException('Link expirado: gere um novo envio em Configurações > Backup');
+    if (!sig || !/^[0-9a-f]{64}$/.test(sig) || !this.crypto.verify(`backup.${id}.${e}`, sig)) throw new ForbiddenException('Link inválido');
+    const f = await this.file(id);
+    await this.audit.log(null, 'DOWNLOAD_EMAIL_LINK', 'BackupLog', id, { fileName: f.log.fileName, ip });
+    return { name: f.log.fileName, buf: f.buf };
   }
 
   // ------------------------------------------------------------ geração
@@ -576,19 +630,45 @@ export class BackupsService {
   }
 
   async email(u: AuthUser | null, id: string) {
-    const cfg = await this.getSettings();
-    const to = [cfg.email, ...cfg.extraEmails].filter(Boolean);
+    const cfg = await this.storedSettings();
+    const to = [cfg.email, ...(cfg.extraEmails ?? [])].filter(Boolean);
     if (!to.length) throw new BadRequestException({ message: 'Configure o e-mail que vai receber o backup', code: 'NO_BACKUP_EMAIL' });
     const f = await this.file(id);
     const when = new Date(f.log.createdAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-    await this.mail.send(
-      to,
-      `LendControl - Backup ${when}`,
-      `Segue em anexo o backup do LendControl Pro gerado em ${when}: ${f.log.totalClientes} clientes, ${f.log.totalEmprestimos} empréstimos, ${f.log.totalParcelas} parcelas.\n\n` +
-        `ATENÇÃO: a planilha contém dados pessoais (CPF completo). Guarde em local seguro e não encaminhe.\n` +
-        `Para restaurar: Configurações > Backup > Restaurar backup.`,
-      [{ filename: f.log.fileName, content: f.buf, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }],
-    );
+    const resumo = `${f.log.totalClientes} clientes, ${f.log.totalEmprestimos} empréstimos, ${f.log.totalParcelas} parcelas`;
+    const mode = cfg.protection ?? 'LINK';
+    if (mode === 'LINK') {
+      const link = this.emailLink(id);
+      const ate = new Date(link.exp * 1000).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      await this.mail.send(
+        to,
+        `LendControl - Backup ${when}`,
+        `O backup do LendControl Pro gerado em ${when} está pronto (${resumo}).\n\n` +
+          `Baixe a planilha por este link (vale até ${ate}):\n${link.url}\n\n` +
+          `Por segurança a planilha não vai anexada: ela tem dados pessoais (CPF completo). Não encaminhe este e-mail.\n` +
+          `Para restaurar: Configurações > Backup > Restaurar backup.`,
+      );
+    } else if (mode === 'SENHA') {
+      if (!cfg.filePasswordEnc) throw new BadRequestException({ message: 'Defina a senha do arquivo em Configurações > Backup', code: 'NO_FILE_PASSWORD' });
+      const enc = encryptFile(f.buf, this.crypto.decrypt(cfg.filePasswordEnc));
+      await this.mail.send(
+        to,
+        `LendControl - Backup ${when}`,
+        `Segue em anexo o backup criptografado do LendControl Pro gerado em ${when} (${resumo}).\n\n` +
+          `O arquivo .lcbak só abre com a senha do arquivo definida em Configurações > Backup.\n` +
+          `Para restaurar: Configurações > Backup > Restaurar backup (informe a senha do arquivo).`,
+        [{ filename: f.log.fileName.replace(/\.xlsx$/, '.lcbak'), content: enc, contentType: 'application/octet-stream' }],
+      );
+    } else {
+      await this.mail.send(
+        to,
+        `LendControl - Backup ${when}`,
+        `Segue em anexo o backup do LendControl Pro gerado em ${when}: ${resumo}.\n\n` +
+          `ATENÇÃO: a planilha contém dados pessoais (CPF completo). Guarde em local seguro e não encaminhe.\n` +
+          `Para restaurar: Configurações > Backup > Restaurar backup.`,
+        [{ filename: f.log.fileName, content: f.buf, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }],
+      );
+    }
     const sentTo = to.join(', ');
     const log = await this.prisma.backupLog.update({ where: { id }, data: { emailSentTo: sentTo } });
     await this.audit.log(u?.id ?? null, 'BACKUP_EMAIL', 'BackupLog', id, { to: sentTo });
@@ -608,7 +688,7 @@ export class BackupsService {
   async weekly() {
     try {
       const b = await this.create(null, { automatic: true });
-      const cfg = await this.getSettings();
+      const cfg = await this.storedSettings();
       if (cfg.enabled && cfg.email && this.mail.configured) await this.email(null, b.id);
     } catch (e) {
       this.logger.error(`Backup automático falhou: ${(e as Error).stack}`);
@@ -871,7 +951,7 @@ export class BackupsController {
   }
 
   @Put('settings')
-  saveSettings(@CurrentUser() u: AuthUser, @Body(new ZodPipe(settingsSchema)) b: EmailConfig) {
+  saveSettings(@CurrentUser() u: AuthUser, @Body(new ZodPipe(settingsSchema)) b: SettingsBody) {
     return this.backups.saveSettings(u, b);
   }
 
@@ -889,6 +969,15 @@ export class BackupsController {
   @Post('restore')
   restore(@CurrentUser() u: AuthUser, @Body(new ZodPipe(z.object({ token: z.string().min(1), password: z.string() }))) b: { token: string; password: string }) {
     return this.backups.restore(u, b.token, b.password);
+  }
+
+  /** Link do e-mail (sem login, assinado, vale 72 h). */
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Get(':id/link')
+  async link(@Param('id') id: string, @Query('exp') exp: string, @Query('sig') sig: string, @Ip() ip: string, @Res() res: Response) {
+    const f = await this.backups.linkDownload(id, exp, sig, ip);
+    sendFile(res, f.name, f.buf, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   }
 
   @Get(':id/download')

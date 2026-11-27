@@ -28,6 +28,9 @@ export interface UserDTO {
   pixKey?: string | null;
   role: Role;
   isActive: boolean;
+  /** Acesso bloqueado por senhas erradas até esta data (ISO), se houver. */
+  lockedUntil?: string | null;
+  failedLogins?: number;
   commissionPercent: number;
   revolving: boolean;
   wallet: WalletDTO;
@@ -485,7 +488,8 @@ export interface BackupDTO {
   isAutomatic: boolean; isRestore: boolean; emailSentTo: string | null; createdAt: string; available: boolean; createdBy?: string | null;
 }
 export interface BackupList { backups: BackupDTO[]; restores: BackupDTO[]; smtpConfigured: boolean }
-export interface BackupEmailConfig { enabled: boolean; email: string; extraEmails: string[] }
+export type BackupEmailProtection = 'LINK' | 'SENHA' | 'ANEXO';
+export interface BackupEmailConfig { enabled: boolean; email: string; extraEmails: string[]; protection?: BackupEmailProtection; hasFilePassword?: boolean; filePassword?: string }
 export interface RestorePreview {
   token: string | null; valid: boolean; encrypted: boolean; fileName: string; backupCreatedAt: string | null; summary: string | null;
   counts: Record<string, number>; errors: string[]; warnings: string[]; distribution: string[];

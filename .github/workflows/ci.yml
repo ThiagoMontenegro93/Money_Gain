@@ -56,7 +56,7 @@ jobs:
 
       - name: Banco e build da API
         working-directory: apps/api
-        run: npx prisma migrate deploy && pnpm build
+        run: npx prisma generate && npx prisma migrate deploy && pnpm build
 
       - name: Build do app web
         working-directory: apps/app

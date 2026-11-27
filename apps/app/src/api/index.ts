@@ -17,6 +17,7 @@ export const api = {
     create: (body: T.CreateUserBody) => http.post<T.UserDTO>('/users', body),
     updateMe: (body: T.UpdateMeBody) => http.put<T.UserDTO>('/users/me', body),
     update: (id: string, body: T.UpdateUserBody) => http.put<T.UserDTO>(`/users/${enc(id)}`, body),
+    unlock: (id: string) => http.post<T.UserDTO>(`/users/${enc(id)}/unlock`),
   },
   dashboard: () => http.get<T.DashboardDTO>('/dashboard'),
   clients: {
