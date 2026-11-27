@@ -16,7 +16,7 @@ env:
   REDIS_URL: redis://localhost:6379
   # chaves só de teste (o CI não tem dados reais)
   JWT_SECRET: ci-jwt-secret-com-pelo-menos-32-caracteres-xx
-  ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000001
+  ENCRYPTION_KEY: '0000000000000000000000000000000000000000000000000000000000000001'
   FILE_SIGNING_SECRET: ci-file-signing-secret-xxxxxxxxxxxxxxxxxx
   SMTP_URL: smtp://localhost:2526
   SMTP_FROM: LendControl CI <ci@lendcontrol.app>
