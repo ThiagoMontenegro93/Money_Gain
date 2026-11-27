@@ -24,9 +24,25 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod --profile https u
 ## 2. Monitoramento
 
 - `GET /api/health` responde `{ status, db, redis, version }` e é usado pelo `HEALTHCHECK` do Docker.
-  Cadastre a URL em um monitor de disponibilidade (UptimeRobot, Better Stack etc.) para receber alerta se cair.
+- **Vigia (`watchdog`)**: sobe junto no `docker-compose.prod.yml` e consulta o health a cada 60 s. Depois de 3 falhas
+  seguidas manda e-mail para `ALERT_EMAIL` (ou `OWNER_EMAIL`) e outro quando o servidor volta. Precisa de `SMTP_URL`.
+  Como roda na mesma máquina, se a máquina inteira cair ele cai junto: para esse caso cadastre também a URL do health
+  num monitor externo gratuito (UptimeRobot, Better Stack).
+- **Alertas internos**: falha do backup semanal, do envio para a nuvem, da rotina das 00:00 ou do WhatsApp das 09:00
+  gera notificação no app e e-mail para `ALERT_EMAIL` e para os e-mails do backup.
 - Logs: `docker compose -f docker-compose.prod.yml logs -f app`.
 - O backup em Excel sai toda segunda 08:00 e aparece em Configurações > Backup. Se o e-mail estiver configurado, chega na caixa de entrada; a falta dele é o sinal de que algo parou.
+
+### Backup na nuvem (fora do servidor)
+1. Crie um bucket privado (ex.: Cloudflare R2, que não cobra saída de dados, ou Amazon S3 em `sa-east-1`).
+2. Crie uma chave de acesso só com permissão de escrita nesse bucket.
+3. Em Configurações > Backup > Backup na nuvem: endereço (R2: `https://<conta>.r2.cloudflarestorage.com`, região `auto`;
+   S3: `https://s3.sa-east-1.amazonaws.com`, região `sa-east-1`), bucket, chaves e uma **senha do backup na nuvem**.
+   Guarde essa senha fora do servidor: sem ela os arquivos não abrem.
+4. "Testar conexão" e depois "Enviar agora". Daí em diante roda sozinho às 03:00.
+5. Para restaurar: baixe o `.lcbak` de `<pasta>/backups/` e use Configurações > Backup > Restaurar (pede a senha).
+   Fotos e comprovantes ficam em `<pasta>/arquivos/<id>.lcbak`, criptografados com a mesma senha.
+6. Configure no bucket uma regra de ciclo de vida (ex.: apagar backups com mais de 90 dias).
 
 ## 3. App Android / iPhone (EAS)
 
